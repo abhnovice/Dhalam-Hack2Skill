@@ -83,7 +83,12 @@ class MainActivity : ComponentActivity() {
                     getSystemService(NotificationManager::class.java)?.cancel(1001)
                 }
             }
-            AuthenticatedContent(authState, ::signInWithGoogle) {
+            AuthenticatedContent(
+                authState,
+                onSignIn = ::signInWithGoogle,
+                // TEMPORARY_LOGIN: remove this callback after Google OAuth works.
+                onTemporarySignIn = askViewModel::signInTemporarily
+            ) {
                 SecurityDashboard(
                 observation = observation.value,
                 scanning = scanning.value,
@@ -161,7 +166,7 @@ class MainActivity : ComponentActivity() {
             askViewModel.showError("Wait for the scan to finish, then send again.")
             return
         }
-        if (!askViewModel.state.signedIn) {
+        if (!askViewModel.state.signedIn || askViewModel.state.temporarySignIn) {
             askViewModel.send(observation.value)
             return
         }
