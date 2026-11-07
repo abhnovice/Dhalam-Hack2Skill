@@ -48,10 +48,36 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "2:7938310589507400482",
+      "lastPropertyId": "3:4774190221530802599",
+      "name": "SecurityScanState",
+      "properties": [
+        {
+          "id": "1:2370916648387340881",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:3250001795912294414",
+          "name": "kind",
+          "indexId": "2:5807705651906686630",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:4774190221530802599",
+          "name": "observedAt",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "1:8103745428610328243",
-  "lastIndexId": "1:78211384482612360",
+  "lastEntityId": "2:7938310589507400482",
+  "lastIndexId": "2:5807705651906686630",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

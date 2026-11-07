@@ -1,5 +1,6 @@
 package com.dhalam.ap
 
+import com.dhalam.ap.data.SecurityStore
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -23,7 +24,16 @@ class SecurityScanWorker(
 
     override fun doWork(): Result {
         val context = applicationContext
-        val observation = collectSecurityObservation(context)
+        val observation = try {
+            collectSecurityObservation(context).also { snapshot ->
+                val repository = SecurityStore.repository(context)
+                repository.saveObservation(snapshot)
+                Log.i("DhalamStorage", "Background scan saved. Stored facts: ${repository.count()}")
+            }
+        } catch (error: Exception) {
+            Log.e(LOG_TAG, "Could not collect or persist background scan.", error)
+            return Result.retry()
+        }
         val prefs = context.getSharedPreferences(
             "dhalam_scoped_baseline",
             Context.MODE_PRIVATE

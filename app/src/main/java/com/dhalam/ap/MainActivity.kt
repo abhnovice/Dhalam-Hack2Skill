@@ -1,5 +1,7 @@
 package com.dhalam.ap
 
+import com.dhalam.ap.data.SecurityStore
+import kotlinx.coroutines.CancellationException
 import android.Manifest
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
@@ -82,11 +84,20 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 observation.value = withContext(Dispatchers.IO) {
-                    collectSecurityObservation(applicationContext)
+                    collectSecurityObservation(applicationContext).also { snapshot ->
+                        val repository = SecurityStore.repository(applicationContext)
+                        repository.saveObservation(snapshot)
+                        Log.i("DhalamStorage", "Foreground scan saved. Stored facts: ${repository.count()}")
+                    }
                 }
             } catch (error: SecurityException) {
                 Log.w("DhalamScan", "Android blocked a scan read.", error)
                 scanError.value = "Android blocked a scan read. Try Scan now again."
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.e("DhalamStorage", "Could not save scan.", error)
+                scanError.value = "Could not complete and save the scan. Try Scan now again."
             } finally {
                 scanning.value = false
             }
