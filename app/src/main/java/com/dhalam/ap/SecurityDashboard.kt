@@ -8,6 +8,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,8 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -84,28 +83,13 @@ private val DarkColors = darkColorScheme(
     onSurfaceVariant = Color(0xFFB8CCC3)
 )
 
-private val PlexSans = FontFamily(
-    Font(R.font.ibm_plex_sans_regular, FontWeight.Normal),
-    Font(R.font.ibm_plex_sans_semibold, FontWeight.SemiBold)
-)
-
-private val DhalamTypography = Typography().let { base ->
-    base.copy(
-        headlineSmall = base.headlineSmall.copy(fontFamily = PlexSans),
-        titleMedium = base.titleMedium.copy(fontFamily = PlexSans),
-        bodyLarge = base.bodyLarge.copy(fontFamily = PlexSans),
-        bodyMedium = base.bodyMedium.copy(fontFamily = PlexSans),
-        bodySmall = base.bodySmall.copy(fontFamily = PlexSans),
-        labelLarge = base.labelLarge.copy(fontFamily = PlexSans),
-        labelMedium = base.labelMedium.copy(fontFamily = PlexSans),
-        labelSmall = base.labelSmall.copy(fontFamily = PlexSans)
-    )
-}
+// Material 3 defaults use Android’s built-in Roboto family, including all type roles.
+private val DhalamTypography = Typography()
 
 private enum class DashboardTab(val label: String, val iconRes: Int) {
-    Permissions("Permissions", R.drawable.fluent_shield),
-    Access("Access", R.drawable.fluent_person),
-    Developer("Developer", R.drawable.fluent_code)
+    Access("Access", R.drawable.material_person),
+    Permissions("AskDhalam", R.drawable.material_chat),
+    Developer("Developer", R.drawable.material_code)
 }
 
 @Composable
@@ -242,9 +226,11 @@ fun SecurityDashboard(
             containerColor = colors.background,
             contentColor = colors.onBackground,
             bottomBar = {
-                Surface(color = colors.surface, contentColor = colors.onSurface) {
+                Surface(color = colors.surface, contentColor = colors.onSurface, tonalElevation = 2.dp) {
                     Column(Modifier.imePadding()) {
-                        AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
+                        if (tab == DashboardTab.Permissions) {
+                            AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
+                        }
 
                         NavigationBar(
                             containerColor = colors.surface,
@@ -280,23 +266,38 @@ fun SecurityDashboard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.fluent_shield),
-                        contentDescription = null,
-                        tint = colors.primary,
-                        modifier = Modifier.size(28.dp)
+                    Image(
+                        painter = painterResource(R.drawable.dhalam_logo_transparent),
+                        contentDescription = "Dhalam logo",
+                        modifier = Modifier.size(64.dp)
                     )
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            "Dhalam",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
                         Caption(lastScan?.let { "Last scan · $it" } ?: "Device review")
                     }
                     Button(onClick = onScan, enabled = !scanning) {
+                        Icon(painterResource(R.drawable.material_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
+                        androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
                         Text(if (scanning) "Scanning…" else "Scan now")
                     }
+                }
+                if (tab == DashboardTab.Permissions) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.material_search), contentDescription = null)
+                        },
+                        label = { Text("Find an app or permission") },
+                        placeholder = { Text("App name, package, camera, location…") },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                TextButton(onClick = { query = "" }) { Text("Clear") }
+                            }
+                        }
+                    )
                 }
 
                 key(tab) {
@@ -310,9 +311,10 @@ fun SecurityDashboard(
                         state = listState,
                         modifier = Modifier.fillMaxWidth().weight(1f),
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        if (askState.loading || askState.error != null || askState.result != null) {
+                        if (tab == DashboardTab.Permissions &&
+                            (askState.loading || askState.error != null || askState.result != null)) {
                             item("ask_answer") {
                                 AskAnswerPanel(askState, observation?.observedAt, onAsk)
                             }
@@ -345,25 +347,6 @@ fun SecurityDashboard(
                                 }
 
                                 if (inventory != null) {
-                                    item("permission_search") {
-                                        OutlinedTextField(
-                                            value = query,
-                                            onValueChange = { query = it },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            singleLine = true,
-                                            shape = RoundedCornerShape(16.dp),
-                                            label = { Text("Find an app or permission") },
-                                            placeholder = { Text("App name, package, camera, location…") },
-                                            trailingIcon = {
-                                                if (query.isNotEmpty()) {
-                                                    TextButton(onClick = { query = "" }) {
-                                                        Text("Clear")
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-
                                     when {
                                         search.isEmpty() -> item("search_hint") {
                                             Caption("Search by app name, package name, or permission.")
@@ -502,13 +485,14 @@ private fun Panel(accent: Boolean = false, content: @Composable () -> Unit) {
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = if (accent) 0.dp else 1.dp,
         color = if (accent) colors.primaryContainer else colors.surface,
         contentColor = if (accent) colors.onPrimaryContainer else colors.onSurface
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             content()
         }

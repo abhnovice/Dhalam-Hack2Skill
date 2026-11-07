@@ -10,8 +10,8 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-// Memory-only Google credential. Never generated in logs or persisted in the APK.
-class AskBackendSession(val url: String, val idToken: String)
+// Optional memory-only Google credential. Local sessions send no identity token.
+class AskBackendSession(val url: String, val idToken: String? = null)
 class AskSignInRequiredException : Exception("Please sign in with Google again.")
 
 
@@ -32,7 +32,7 @@ class AskBackend {
             connection.connectTimeout = 10_000
             connection.readTimeout = 20_000
             connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Authorization", "Bearer ${session.idToken}")
+            session.idToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             checkResponseCode(connection.responseCode)
         } finally { connection.disconnect() }
     }
@@ -72,7 +72,7 @@ class AskBackend {
             connection.readTimeout = 60_000
             connection.instanceFollowRedirects = false
             connection.doOutput = true
-            connection.setRequestProperty("Authorization", "Bearer ${settings.idToken}")
+            settings.idToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             connection.setFixedLengthStreamingMode(body.size)
             coroutineContext.ensureActive()

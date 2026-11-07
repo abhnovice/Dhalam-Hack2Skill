@@ -29,6 +29,7 @@ data class AskUiState(
     val backendUrl: String = BuildConfig.ASK_BACKEND_URL,
     val signedIn: Boolean = false,
     val temporarySignIn: Boolean = false,
+    val localSignIn: Boolean = false,
     val signingIn: Boolean = false,
     val accountLabel: String? = null,
     val error: String? = null,
@@ -88,7 +89,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
                 AskBackend().verifySession(value)
                 session = value
                 AppSessionAccess.signedIn = true
-                state = state.copy(signingIn = false, signedIn = true, temporarySignIn = false, accountLabel = label, error = null)
+                state = state.copy(signingIn = false, signedIn = true, temporarySignIn = false, localSignIn = false, accountLabel = label, error = null)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: IOException) {
@@ -103,6 +104,19 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun beginBiometricSignIn() {
+        state = state.copy(signingIn = true, error = null)
+    }
+
+    /** Called only by Android's successful biometric callback; no biometric data is stored. */
+    fun completeBiometricSignIn() {
+        clear()
+        session = null
+        AppSessionAccess.signedIn = true
+        state = state.copy(signedIn = true, localSignIn = true, temporarySignIn = false,
+            accountLabel = "Local biometric session", error = null)
+    }
+
     // TEMPORARY_LOGIN: remove this entire function after Google OAuth is working.
     // Unlocks local debug UI/scans only; it never creates a Google/backend credential.
     fun signInTemporarily(username: String, password: String): Boolean {
@@ -110,7 +124,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         clear()
         session = null
         AppSessionAccess.signedIn = true
-        state = state.copy(signedIn = true, temporarySignIn = true,
+        state = state.copy(signedIn = true, temporarySignIn = true, localSignIn = false,
             accountLabel = "Temporary · abhyudayamarya", error = null)
         return true
     }
@@ -118,12 +132,10 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
     fun send(snapshot: SecurityObservation?) {
         if (state.loading || state.signingIn) return
         val question = state.question.trim()
-        val currentSession = session
+        val currentSession = session ?: backendUrl?.let { AskBackendSession(it) }
         when {
-            currentSession == null -> return showError(
-                if (state.temporarySignIn) "Temporary sign-in unlocks local testing only. Sign in with Google to use AI answers."
-                else "Sign in with Google before asking a question."
-            )
+            !state.signedIn -> return showError("Unlock Dhalam before asking a question.")
+            currentSession == null -> return showError("The developer must configure the AI backend URL.")
             question.isEmpty() -> return showError("Enter a question first.")
             snapshot == null -> return showError("Tap Scan now before asking about this device.")
         }
@@ -138,7 +150,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (_: AskSignInRequiredException) {
                 session = null
                 AppSessionAccess.signedIn = false
-                state = state.copy(question = "", loading = false, signedIn = false, temporarySignIn = false, accountLabel = null,
+                state = state.copy(question = "", loading = false, signedIn = false, temporarySignIn = false, localSignIn = false, accountLabel = null,
                     result = null, submittedQuestion = null,
                     error = "Your sign-in expired. Sign in with Google again.")
             } catch (_: SocketTimeoutException) {
@@ -164,7 +176,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         AppSessionAccess.signedIn = false
         clear()
         session = null
-        state = state.copy(signedIn = false, temporarySignIn = false, accountLabel = null)
+        state = state.copy(signedIn = false, temporarySignIn = false, localSignIn = false, accountLabel = null)
     }
 
     override fun onCleared() {

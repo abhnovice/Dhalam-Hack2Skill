@@ -1,10 +1,16 @@
-# Dhalam: Google sign-in and Groq
+# Dhalam: local biometric access, optional Google sign-in, and Groq
 
-Users tap **Sign in with Google**, choose their Google account, and ask a
-question. They do not enter backend URLs, API keys or shared tokens.
-The Android app uses Credential Manager; the backend verifies Google's signed
-ID token, its expiry, issuer, audience, subject and verified-email claim before
-allowing a Groq request. The Groq key stays only on the backend.
+Users unlock with enrolled strong biometrics or choose **Sign in with Google**.
+Both options allow AI questions; users never enter backend URLs or API keys.
+Android performs biometric verification locally; the app never receives or stores
+biometric templates. No Google token is sent for local sessions. If a Google
+token is supplied, the backend verifies its signature, expiry, issuer, audience,
+subject and verified email. The Groq key stays only on the backend.
+
+The AI endpoints intentionally accept requests without an identity token.
+Local biometric success is an app access gate, not remotely verified identity.
+Restart the backend after this update. Google OAuth setup below is optional
+and is needed only for the Google sign-in option.
 
 This replaces the demo-token setup. `DHALAM_API_TOKEN` is ignored, and Android
 deletes the retired saved demo configuration. No Firebase, password database,
@@ -57,11 +63,11 @@ backend/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 1876
 ```
 
 The debug app defaults to `http://10.0.2.2:18765` for the standard emulator.
-Use an emulator with Google Play and a Google account. Android 17 may ask for
-local-network access when you tap Sign in. Until the backend verifies Google
-sign-in, only the sign-in screen is composed: dashboard, scans, search, export
-and navigation are unavailable. Denying access keeps the app on the sign-in screen.
-Background scans are also gated on the in-process authenticated session.
+Use enrolled strong biometrics, or an emulator with Google Play and an account
+for Google sign-in. Android 17 may request local-network access for AI requests.
+Until biometric unlock or Google sign-in succeeds, dashboard, scans, search,
+export and navigation remain unavailable. Background scans are gated on the
+in-process session; a process restart requires unlocking again.
 
 A release build has **no default backend URL**. It must have a deployed HTTPS
 endpoint before users can use Ask Dhalam away from your development computer.
@@ -69,7 +75,7 @@ There is no endpoint/token settings dialog in the user interface.
 
 ## Physical phone or remote demo
 
-Once OAuth is configured, you can expose the running authenticated backend
+For a remote demo, you can expose the running backend
 through a temporary HTTPS tunnel, for example with an installed `cloudflared`:
 
 ```bash
@@ -95,12 +101,12 @@ Never bundle the Groq key in Gradle properties, BuildConfig or app resources.
 ## API and lifecycle
 
 - `GET /health`: public process liveness, no Groq call.
-- `GET /check`: Google-authenticated sign-in verification and configuration status.
-- `POST /ask`: Google-authenticated question and selected evidence → validated Groq answer.
+- `GET /check`: configuration status; verifies Google identity if supplied.
+- `POST /ask`: question and selected evidence → validated Groq answer; Google is optional.
 
-The Authorization header contains the user's Google ID token. There is no
-shared-token fallback. Missing Google configuration fails closed with 503;
-invalid/expired credentials return 401; an unverified Google email returns 403.
+Local sessions omit Authorization. When supplied, the header contains a Google
+ID token; invalid/expired credentials return 401 and unverified email returns 403.
+Google configuration is required only for requests supplying Google credentials.
 
 Google tokens stay in the app's ViewModel memory and are never logged or saved
 to disk/backups. Rotation retains the session. Process restart or an expired

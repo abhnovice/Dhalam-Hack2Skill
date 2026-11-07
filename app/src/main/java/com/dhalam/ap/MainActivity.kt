@@ -24,7 +24,10 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,7 +44,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+    private lateinit var biometricPrompt: BiometricPrompt
     private val askViewModel by lazy { ViewModelProvider(this)[AskDhalamViewModel::class.java] }
     private val credentialManager by lazy { CredentialManager.create(this) }
     private var pendingLocalAction: (() -> Unit)? = null
@@ -67,6 +71,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    askViewModel.completeBiometricSignIn()
+                }
+                override fun onAuthenticationError(code: Int, message: CharSequence) {
+                    askViewModel.signInFailed(message.toString())
+                }
+                override fun onAuthenticationFailed() {
+                    // Android keeps the prompt open for another attempt; never unlock here.
+                }
+            })
 
         setContent {
             val authState = askViewModel.state
@@ -87,7 +103,8 @@ class MainActivity : ComponentActivity() {
                 authState,
                 onSignIn = ::signInWithGoogle,
                 // TEMPORARY_LOGIN: remove this callback after Google OAuth works.
-                onTemporarySignIn = askViewModel::signInTemporarily
+                onTemporarySignIn = askViewModel::signInTemporarily,
+                onBiometricSignIn = ::signInWithBiometrics
             ) {
                 SecurityDashboard(
                 observation = observation.value,
@@ -166,11 +183,34 @@ class MainActivity : ComponentActivity() {
             askViewModel.showError("Wait for the scan to finish, then send again.")
             return
         }
-        if (!askViewModel.state.signedIn || askViewModel.state.temporarySignIn) {
+        if (!askViewModel.state.signedIn) {
             askViewModel.send(observation.value)
             return
         }
         withLocalNetworkAccess { askViewModel.send(observation.value) }
+    }
+
+    private fun signInWithBiometrics() {
+        if (askViewModel.state.signingIn || askViewModel.state.loading) return
+        val status = BiometricManager.from(this)
+            .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        if (status != BiometricManager.BIOMETRIC_SUCCESS) {
+            askViewModel.showError(when (status) {
+                BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
+                    "Add a fingerprint or supported face in Android Settings, then try again."
+                BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE ->
+                    "This device has no supported biometric sensor. You can use Google sign-in."
+                else -> "Strong biometric authentication is unavailable right now. Try again or use Google."
+            })
+            return
+        }
+        askViewModel.beginBiometricSignIn()
+        biometricPrompt.authenticate(BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Dhalam")
+            .setSubtitle("Use your device biometric to continue locally")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setNegativeButtonText("Cancel")
+            .build())
     }
 
     private fun signInWithGoogle() {

@@ -27,13 +27,13 @@ def main():
         print("FAIL: backend health check failed.")
         return 1
     if check.status_code == 503:
-        print("NOT READY: configure GOOGLE_WEB_CLIENT_ID on the backend and restart it.")
+        print("NOT READY: check the backend configuration and restart it.")
         return 1
-    if check.status_code != 401:
-        print("FAIL: unauthenticated access was not rejected as expected.")
+    if check.status_code != 200 or check.json().get("status") != "configured":
+        print("NOT READY: configure GROQ_API_KEY on the backend and restart it.")
         return 1
-    print("PASS: backend is reachable and requires Google sign-in.")
-    print("Test the live Groq request by signing in and asking a question in the app.")
+    print("PASS: backend is reachable; Google sign-in is optional.")
+    print("Test the live Groq request by unlocking Dhalam and asking a question.")
     return 0
 
 

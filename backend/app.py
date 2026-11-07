@@ -1,4 +1,4 @@
-"""Google-authenticated Groq bridge. API keys are server-side only."""
+"""Groq bridge with optional Google identity. API keys are server-side only."""
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import json
@@ -187,7 +187,12 @@ def create_app(settings: Settings | None = None, transport=None,
     api = FastAPI(title="Dhalam AI bridge", lifespan=lifespan, debug=False)
     bearer = HTTPBearer(auto_error=False)
 
-    async def authenticate(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    async def authenticate(request: Request,
+                           credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        # Local biometric unlock is enforced on-device, not asserted as a server identity.
+        # Requests without Google credentials are intentionally allowed.
+        if "authorization" not in request.headers:
+            return None
         if not settings.google_client_id.endswith(".apps.googleusercontent.com"):
             raise HTTPException(503, "Google sign-in is not configured on the server.")
         if credentials is None or len(credentials.credentials) > 8192:

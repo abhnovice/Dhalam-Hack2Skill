@@ -52,6 +52,15 @@ def client(handler, settings=SETTINGS):
     return TestClient(create_app(settings, httpx.MockTransport(handler), verify_identity=mock_identity))
 
 
+def test_local_session_can_ask_without_google_configuration():
+    settings = Settings(groq_key="fake-upstream-key", google_client_id="")
+    with client(lambda request: success(), settings) as api:
+        assert api.get("/check").json()["status"] == "configured"
+        result = api.post("/ask", json=PAYLOAD)
+        assert result.status_code == 200
+        assert result.json() == REPORT
+
+
 def test_authenticated_ask_and_strict_schema():
     calls = []
 
@@ -74,8 +83,8 @@ def test_authenticated_ask_and_strict_schema():
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer incorrect"}])
-def test_unauthenticated_requests_do_not_reach_groq(headers):
+@pytest.mark.parametrize("headers", [{"Authorization": "Bearer incorrect"}, {"Authorization": "Basic bad"}])
+def test_invalid_credentials_do_not_reach_groq(headers):
     def handler(request):
         pytest.fail("Unauthorized request reached Groq")
     with client(handler) as api:

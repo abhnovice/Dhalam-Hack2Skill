@@ -43,23 +43,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val SignInBrandFont = FontFamily(
-    Font(R.font.ibm_plex_sans_semibold, FontWeight.SemiBold)
-)
+private val SignInBrandFont = FontFamily.SansSerif
 
-/** Protected content requires verified Google sign-in or the explicit debug-only temporary login. */
+/** Protected content requires Google sign-in, local biometric unlock, or debug-only temporary login. */
 @Composable
 fun AuthenticatedContent(
     state: AskUiState,
     onSignIn: () -> Unit,
     onTemporarySignIn: (String, String) -> Boolean = { _, _ -> false },
+    onBiometricSignIn: () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     if (state.signedIn) {
@@ -107,7 +105,7 @@ fun AuthenticatedContent(
                             fontFamily = SignInBrandFont,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(top = 12.dp)
+                            modifier = Modifier.padding(top = 16.dp)
                         )
                         Text(
                             "Sign in to review your device’s permissions and security.",
@@ -142,6 +140,16 @@ fun AuthenticatedContent(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
+                    OutlinedButton(
+                        onClick = onBiometricSignIn,
+                        enabled = !state.signingIn,
+                        modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 52.dp)
+                    ) { Text("Unlock with biometrics") }
+                    Text(
+                        "Choose biometrics or Google. Biometric data stays on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center
+                    )
                     OutlinedButton(
                         onClick = onSignIn,
                         enabled = !state.signingIn,
