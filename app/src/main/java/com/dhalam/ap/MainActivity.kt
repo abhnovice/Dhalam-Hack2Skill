@@ -4,6 +4,18 @@ import com.dhalam.ap.data.SecurityStore
 import kotlinx.coroutines.CancellationException
 import android.Manifest
 import android.app.NotificationManager
+import android.app.AlertDialog
+import androidx.lifecycle.ViewModelProvider
+import android.content.MutableContextWrapper
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.CustomCredential
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,6 +29,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -27,8 +42,19 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
+    private val askViewModel by lazy { ViewModelProvider(this)[AskDhalamViewModel::class.java] }
+    private val credentialManager by lazy { CredentialManager.create(this) }
+    private var pendingLocalAction: (() -> Unit)? = null
+    private val localNetworkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
+    private val localNetworkRequest = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingLocalAction
+        pendingLocalAction = null
+        if (granted) action?.invoke()
+        else askViewModel.showError("Local network access was denied. Allow Nearby devices in App settings, then retry.")
+    }
     private val observation = mutableStateOf<SecurityObservation?>(null)
     private val scanning = mutableStateOf(false)
+    private var scanJob: Job? = null
     private val scanError = mutableStateOf<String?>(null)
     private val notificationsEnabled = mutableStateOf(false)
 
@@ -43,7 +69,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            SecurityDashboard(
+            val authState = askViewModel.state
+            LaunchedEffect(authState.signedIn) {
+                if (authState.signedIn) {
+                    startPeriodicScans()
+                    scan()
+                } else {
+                    scanJob?.cancel()
+                    scanning.value = false
+                    observation.value = null
+                    scanError.value = null
+                    WorkManager.getInstance(applicationContext).cancelUniqueWork("dhalam-security-scan")
+                    getSystemService(NotificationManager::class.java)?.cancel(1001)
+                }
+            }
+            AuthenticatedContent(authState, ::signInWithGoogle) {
+                SecurityDashboard(
                 observation = observation.value,
                 scanning = scanning.value,
                 scanError = scanError.value,
@@ -55,10 +96,19 @@ class MainActivity : ComponentActivity() {
                 },
                 onOpenDeveloperOptions = {
                     openSettings(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                }
-            )
+                },
+                askState = askViewModel.state,
+                onQuestionChange = askViewModel::updateQuestion,
+                onAsk = ::sendAskQuestion,
+                onClearAsk = askViewModel::clear,
+                onSignIn = ::signInWithGoogle,
+                onSignOut = ::signOutGoogle
+                )
+            }
         }
+    }
 
+    private fun startPeriodicScans() {
         val request = PeriodicWorkRequestBuilder<SecurityScanWorker>(
             15, TimeUnit.MINUTES
         ).build()
@@ -77,14 +127,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scan() {
-        if (scanning.value) return
+        if (!askViewModel.state.signedIn || scanning.value) return
         scanning.value = true
         scanError.value = null
 
-        lifecycleScope.launch {
+        scanJob = lifecycleScope.launch {
             try {
                 observation.value = withContext(Dispatchers.IO) {
                     collectSecurityObservation(applicationContext).also { snapshot ->
+                        coroutineContext.ensureActive()
+                        if (!AppSessionAccess.signedIn) throw CancellationException("Signed out")
                         val repository = SecurityStore.repository(applicationContext)
                         repository.saveObservation(snapshot)
                         Log.i("DhalamStorage", "Foreground scan saved. Stored facts: ${repository.count()}")
@@ -104,12 +156,97 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun sendAskQuestion() {
+        if (scanning.value) {
+            askViewModel.showError("Wait for the scan to finish, then send again.")
+            return
+        }
+        if (!askViewModel.state.signedIn) {
+            askViewModel.send(observation.value)
+            return
+        }
+        withLocalNetworkAccess { askViewModel.send(observation.value) }
+    }
+
+    private fun signInWithGoogle() {
+        if (!askViewModel.state.configured) {
+            askViewModel.beginGoogleSignIn()
+            return
+        }
+        withLocalNetworkAccess {
+            if (!askViewModel.beginGoogleSignIn()) return@withLocalNetworkAccess
+            lifecycleScope.launch {
+                try {
+                    val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID).build()
+                    val response = credentialManager.getCredential(
+                        context = MutableContextWrapper(this@MainActivity),
+                        request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+                    )
+                    val credential = response.credential as? CustomCredential
+                    check(credential?.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+                    val google = GoogleIdTokenCredential.createFrom(requireNotNull(credential).data)
+                    askViewModel.completeGoogleSignIn(google.idToken, google.displayName ?: google.id)
+                } catch (_: GetCredentialCancellationException) {
+                    askViewModel.signInFailed("Sign-in was cancelled.")
+                } catch (_: NoCredentialException) {
+                    askViewModel.signInFailed("No Google account is available. Add an account to this device and try again.")
+                } catch (_: GetCredentialException) {
+                    askViewModel.signInFailed("Google sign-in could not complete. Please try again.")
+                } catch (error: CancellationException) {
+                    askViewModel.signInFailed("Sign-in was interrupted. Please try again.")
+                    throw error
+                } catch (_: Exception) {
+                    askViewModel.signInFailed("Google sign-in returned an unsupported response. Please try again.")
+                }
+            }
+        }
+    }
+
+    private fun signOutGoogle() {
+        askViewModel.signOut()
+        lifecycleScope.launch {
+            try { credentialManager.clearCredentialState(ClearCredentialStateRequest()) }
+            catch (error: CancellationException) { throw error }
+            catch (_: Exception) { /* Local credentials are already cleared. */ }
+        }
+    }
+
+    private fun withLocalNetworkAccess(action: () -> Unit) {
+        val host = Uri.parse(askViewModel.state.backendUrl).host.orEmpty()
+        val localHost = host == "localhost" || host == "127.0.0.1" ||
+            host.startsWith("10.") || host.startsWith("192.168.") || host.endsWith(".local") ||
+            (host.startsWith("172.") && host.split('.').getOrNull(1)?.toIntOrNull() in 16..31)
+        if (BuildConfig.DEBUG && localHost &&
+            Build.VERSION.SDK_INT >= 37 && checkSelfPermission(localNetworkPermission) != PackageManager.PERMISSION_GRANTED) {
+            pendingLocalAction = action
+            val prefs = getSharedPreferences("dhalam_permissions", MODE_PRIVATE)
+            if (shouldShowRequestPermissionRationale(localNetworkPermission)) {
+                AlertDialog.Builder(this).setTitle("Connect to your demo backend")
+                    .setMessage("Ask Dhalam needs local network access to reach the backend running on your computer.")
+                    .setPositiveButton("Continue") { _, _ -> localNetworkRequest.launch(localNetworkPermission) }
+                    .setNegativeButton("Cancel", null).show()
+            } else if (prefs.getBoolean("asked_for_local_network", false)) {
+                AlertDialog.Builder(this).setTitle("Allow local network access")
+                    .setMessage("Enable Nearby devices for Dhalam in App settings to reach your local backend.")
+                    .setPositiveButton("App settings") { _, _ ->
+                        openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                    }.setNegativeButton("Cancel", null).show()
+            } else {
+                prefs.edit().putBoolean("asked_for_local_network", true).apply()
+                localNetworkRequest.launch(localNetworkPermission)
+            }
+            return
+        }
+        action()
+    }
+
     private fun refreshNotificationStatus() {
         notificationsEnabled.value = getSystemService(NotificationManager::class.java)
             ?.areNotificationsEnabled() == true
     }
 
     private fun enableAlerts() {
+        if (!askViewModel.state.signedIn) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED

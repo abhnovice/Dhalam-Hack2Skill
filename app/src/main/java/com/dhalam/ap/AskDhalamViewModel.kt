@@ -1,0 +1,158 @@
+package com.dhalam.ap
+
+import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.dhalam.ap.data.SecurityStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
+import java.net.SocketTimeoutException
+
+/** Background work must not treat a previous launch as an authenticated session. */
+internal object AppSessionAccess {
+    @Volatile var signedIn = false
+}
+
+data class AskUiState(
+    val question: String = "",
+    val loading: Boolean = false,
+    val configured: Boolean = false,
+    val settingsReady: Boolean = true,
+    val backendUrl: String = BuildConfig.ASK_BACKEND_URL,
+    val signedIn: Boolean = false,
+    val signingIn: Boolean = false,
+    val accountLabel: String? = null,
+    val error: String? = null,
+    val result: AskResult? = null,
+    val submittedQuestion: String? = null
+)
+
+class AskDhalamViewModel(application: Application) : AndroidViewModel(application) {
+    private val backendUrl = runCatching {
+        normalizeBackendUrl(BuildConfig.ASK_BACKEND_URL).also {
+            require(BuildConfig.DEBUG || it.startsWith("https://"))
+        }
+    }.getOrNull()
+    var state by mutableStateOf(AskUiState(configured = backendUrl != null &&
+        BuildConfig.GOOGLE_WEB_CLIENT_ID.endsWith(".apps.googleusercontent.com")))
+        private set
+    private var session: AskBackendSession? = null
+    private var job: Job? = null
+
+    init {
+        // Remove the retired shared-token configuration; never read its contents.
+        viewModelScope.launch(Dispatchers.IO) {
+            File(application.noBackupFilesDir, "ask-backend.properties").delete()
+            File(application.noBackupFilesDir, "ask-backend.properties.bak").delete()
+        }
+    }
+
+    fun updateQuestion(value: String) { state = state.copy(question = value.take(2000)) }
+    fun showError(message: String) { state = state.copy(error = message) }
+
+    fun beginGoogleSignIn(): Boolean {
+        if (state.signingIn || state.loading) return false
+        if (!state.configured) {
+            showError(if (BuildConfig.DEBUG) {
+                if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.endsWith(".apps.googleusercontent.com")) {
+                    "Google sign-in setup is incomplete: the developer must configure the OAuth Web client ID."
+                } else {
+                    "Google sign-in setup is incomplete: the developer must configure a valid backend URL."
+                }
+            } else {
+                "Sign-in is temporarily unavailable. Please try again later."
+            })
+            return false
+        }
+        state = state.copy(signingIn = true, error = null)
+        return true
+    }
+
+    fun signInFailed(message: String) {
+        state = state.copy(signingIn = false, error = message)
+    }
+
+    fun completeGoogleSignIn(idToken: String, label: String) {
+        job = viewModelScope.launch {
+            try {
+                val value = AskBackendSession(requireNotNull(backendUrl), idToken)
+                AskBackend().verifySession(value)
+                session = value
+                AppSessionAccess.signedIn = true
+                state = state.copy(signingIn = false, signedIn = true, accountLabel = label, error = null)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: IOException) {
+                signInFailed("Cannot connect to the service. Check your internet connection and try again.")
+            } catch (error: AskSignInRequiredException) {
+                signInFailed(error.message ?: "Sign in with Google again.")
+            } catch (error: IllegalStateException) {
+                signInFailed(error.message ?: "Sign-in is unavailable. Please try again.")
+            } catch (_: Exception) {
+                signInFailed("Could not verify your sign-in. Please try again.")
+            }
+        }
+    }
+
+    fun send(snapshot: SecurityObservation?) {
+        if (state.loading || state.signingIn) return
+        val question = state.question.trim()
+        val currentSession = session
+        when {
+            currentSession == null -> return showError("Sign in with Google before asking a question.")
+            question.isEmpty() -> return showError("Enter a question first.")
+            snapshot == null -> return showError("Tap Scan now before asking about this device.")
+        }
+        state = state.copy(loading = true, error = null, result = null, submittedQuestion = question)
+        job = viewModelScope.launch {
+            try {
+                val facts = withContext(Dispatchers.IO) { SecurityStore.repository(getApplication()).all() }
+                val result = AskBackend().ask(requireNotNull(currentSession), question, facts, requireNotNull(snapshot))
+                state = state.copy(loading = false, result = result)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: AskSignInRequiredException) {
+                session = null
+                AppSessionAccess.signedIn = false
+                state = state.copy(question = "", loading = false, signedIn = false, accountLabel = null,
+                    result = null, submittedQuestion = null,
+                    error = "Your sign-in expired. Sign in with Google again.")
+            } catch (_: SocketTimeoutException) {
+                state = state.copy(loading = false, error = "The request timed out. Please try again.")
+            } catch (_: IOException) {
+                state = state.copy(loading = false, error = "Cannot connect. Check your internet connection and try again.")
+            } catch (error: IllegalStateException) {
+                state = state.copy(loading = false, error = error.message ?: "An answer is unavailable. Please retry.")
+            } catch (_: Exception) {
+                state = state.copy(loading = false, error = "The service returned an unsupported answer. Please retry.")
+            }
+        }
+    }
+
+    fun clear() {
+        job?.cancel()
+        job = null
+        state = state.copy(question = "", loading = false, signingIn = false, error = null,
+            result = null, submittedQuestion = null)
+    }
+
+    fun signOut() {
+        AppSessionAccess.signedIn = false
+        clear()
+        session = null
+        state = state.copy(signedIn = false, accountLabel = null)
+    }
+
+    override fun onCleared() {
+        AppSessionAccess.signedIn = false
+        super.onCleared()
+    }
+}

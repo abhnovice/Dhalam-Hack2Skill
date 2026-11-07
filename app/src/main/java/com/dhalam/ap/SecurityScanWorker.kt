@@ -23,9 +23,11 @@ class SecurityScanWorker(
 ) : Worker(context, params) {
 
     override fun doWork(): Result {
+        if (!AppSessionAccess.signedIn || isStopped) return Result.success()
         val context = applicationContext
         val observation = try {
             collectSecurityObservation(context).also { snapshot ->
+                if (!AppSessionAccess.signedIn || isStopped) return Result.success()
                 val repository = SecurityStore.repository(context)
                 repository.saveObservation(snapshot)
                 Log.i("DhalamStorage", "Background scan saved. Stored facts: ${repository.count()}")
@@ -86,7 +88,9 @@ class SecurityScanWorker(
         if (!update.commit()) return Result.retry()
 
         Log.i(LOG_TAG, "Scan at ${observation.observedAt}. Changes: ${changes.size}")
-        if (changes.isNotEmpty()) postNotification(context, changes.joinToString("\n"))
+        if (changes.isNotEmpty() && AppSessionAccess.signedIn && !isStopped) {
+            postNotification(context, changes.joinToString("\n"))
+        }
 
         return Result.success()
     }

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -115,11 +117,16 @@ fun SecurityDashboard(
     onScan: () -> Unit,
     onEnableAlerts: () -> Unit,
     onOpenAccessibility: () -> Unit,
-    onOpenDeveloperOptions: () -> Unit
+    onOpenDeveloperOptions: () -> Unit,
+    askState: AskUiState,
+    onQuestionChange: (String) -> Unit,
+    onAsk: () -> Unit,
+    onClearAsk: () -> Unit,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Permissions.name) }
     var query by rememberSaveable { mutableStateOf("") }
-    var question by remember { mutableStateOf("") }
 
     var showExports by rememberSaveable { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
@@ -237,16 +244,7 @@ fun SecurityDashboard(
             bottomBar = {
                 Surface(color = colors.surface, contentColor = colors.onSurface) {
                     Column(Modifier.imePadding()) {
-                        OutlinedTextField(
-                            value = question,
-                            onValueChange = { question = it },
-                            modifier = Modifier.fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            singleLine = true,
-                            label = { Text("Ask Dhalam · preview") },
-                            placeholder = { Text("Could this request be a scam?") }
-                        )
+                        AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
 
                         NavigationBar(
                             containerColor = colors.surface,
@@ -302,11 +300,23 @@ fun SecurityDashboard(
                 }
 
                 key(tab) {
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(askState.loading, askState.result, askState.error) {
+                        if (askState.loading || askState.result != null || askState.error != null) {
+                            listState.animateScrollToItem(0)
+                        }
+                    }
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxWidth().weight(1f),
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (askState.loading || askState.error != null || askState.result != null) {
+                            item("ask_answer") {
+                                AskAnswerPanel(askState, observation?.observedAt, onAsk)
+                            }
+                        }
                         if (scanError != null) {
                             item("scan_error") { Text(scanError, color = colors.error) }
                         }
