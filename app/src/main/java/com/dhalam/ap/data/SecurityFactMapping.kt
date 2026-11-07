@@ -37,6 +37,9 @@ fun SecurityObservation.factBatches(): List<SecurityFactBatch> = buildList {
                 }))
             }
         }
+    add(SecurityFactBatch("device", deviceSignals.map { signal ->
+        fact("device", signal.label, "", signal.label, signal.status)
+    }))
     add(SecurityFactBatch("developer", developerSignals.map { signal ->
         fact("developer", signal.label, "", signal.label, signal.status)
     }))

@@ -1,4 +1,4 @@
-"""Groq bridge with optional Google identity. API keys are server-side only."""
+"""Dhalam backend: Gemini triage and evidence-grounded Android compatibility API."""
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import json
@@ -30,6 +30,7 @@ class Settings:
     groq_key: str = field(default="", repr=False)
     google_client_id: str = ""
     model: str = "openai/gpt-oss-20b"
+    provider: str = "groq"
 
     @classmethod
     def from_env(cls):
@@ -38,7 +39,8 @@ class Settings:
         return cls(
             os.getenv("GROQ_API_KEY", "").strip(),
             os.getenv("GOOGLE_WEB_CLIENT_ID", "").strip(),
-            os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip(),
+            os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip(),
+            os.getenv("AI_PROVIDER", "gemini").strip(),
         )
 
 
@@ -134,7 +136,7 @@ class BodyLimitMiddleware:
                 return
             chunk = message.get("body", b"")
             size += len(chunk)
-            if size > MAX_BODY_BYTES:
+            if size > (5_700_000 if scope.get("path", "").startswith("/api/v1/") else MAX_BODY_BYTES):
                 response = JSONResponse(status_code=413, content={"detail": "Request is too large."})
                 return await response(scope, receive, send)
             chunks.append(chunk)
@@ -222,16 +224,30 @@ def create_app(settings: Settings | None = None, transport=None,
 
     @api.get("/check", dependencies=[Depends(authenticate)])
     async def check():
-        return {"status": "configured" if settings.groq_key else "missing_groq_key",
+        return {"status": "configured" if settings.provider == "gemini" or settings.groq_key else "missing_groq_key",
                 "model": settings.model, "scoringAvailable": False, "embeddingsAvailable": False}
 
     @api.post("/ask", response_model=Insight, dependencies=[Depends(authenticate)])
     async def ask(payload: AskRequest, request: Request):
-        if not settings.groq_key:
+        if settings.provider != "gemini" and not settings.groq_key:
             raise HTTPException(503, "Groq API key is not configured.")
         ids = {item.id for item in payload.evidence}
         if len(ids) != len(payload.evidence) or not payload.question.strip():
             raise HTTPException(422, "Evidence IDs must be unique and the question must not be blank.")
+        if settings.provider == "gemini":
+            from .triage.gemini_service import get_client
+            from google.genai import types
+            try:
+                async with get_client().aio as client:
+                    response = await client.models.generate_content(
+                        model=settings.model, contents=json.dumps(payload.model_dump()),
+                        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT,
+                            response_mime_type="application/json", response_schema=Insight,
+                            temperature=0.1, max_output_tokens=4096))
+                return validate_insight(response.text or "", ids)
+            except Exception as error:
+                logger.warning("Gemini evidence analysis failed: %s", type(error).__name__)
+                raise HTTPException(502, "Google AI could not complete the assessment. Try again.") from None
         schema = Insight.model_json_schema()
         # Constrained decoding prevents invented or misspelled citations at generation time.
         schema["$defs"]["Finding"]["properties"]["evidenceIds"]["items"] = {
@@ -283,6 +299,8 @@ def create_app(settings: Settings | None = None, transport=None,
             # Never forward raw model responses or upstream errors.
             raise HTTPException(502, "Groq returned an incomplete or unsupported answer. Try again.") from None
 
+    from .triage.main import app as triage_app
+    api.include_router(triage_app.router)
     return api
 
 

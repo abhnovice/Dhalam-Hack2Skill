@@ -1,6 +1,9 @@
 package com.dhalam.ap
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.KeyguardManager
+import android.hardware.biometrics.BiometricManager
+import android.os.Build
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageInfo
@@ -40,7 +43,8 @@ data class SecurityObservation(
     val services: List<ObservedAccessibilityService>?,
     val installedServices: List<ObservedAccessibilityService>?,
     val developerSignals: List<DeveloperSignal>,
-    val permissionInventory: PermissionInventory?
+    val permissionInventory: PermissionInventory?,
+    val deviceSignals: List<DeveloperSignal> = emptyList()
 )
 
 fun normalizedServiceId(id: String?): String? =
@@ -86,7 +90,8 @@ fun collectSecurityObservation(context: Context): SecurityObservation {
         services = enabled,
         installedServices = installed,
         developerSignals = developerSignals,
-        permissionInventory = inventory
+        permissionInventory = inventory,
+        deviceSignals = collectDeviceSignals(context)
     )
 }
 
@@ -173,4 +178,43 @@ private fun collectPermissionInventory(
     )
 
     return PermissionInventory(packages.size, reports)
+}
+/** Configuration checks only: these do not authenticate or assess passcode strength. */
+private fun collectDeviceSignals(context: Context): List<DeveloperSignal> {
+    val lockStatus = try {
+        when (context.getSystemService(KeyguardManager::class.java)?.isDeviceSecure) {
+            true -> "Configured — PIN, pattern or password is set"
+            false -> "Not configured — set a screen lock in Settings"
+            null -> "Unavailable — could not determine screen lock status"
+        }
+    } catch (_: SecurityException) {
+        "Unavailable — access restricted"
+    }
+    val biometricStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        try {
+            val manager = context.getSystemService(BiometricManager::class.java)
+            @Suppress("DEPRECATION")
+            val status = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                manager?.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+            } else {
+                manager?.canAuthenticate()
+            }
+            when (status) {
+                BiometricManager.BIOMETRIC_SUCCESS -> "Ready — biometrics are enrolled and available to this app"
+                BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> "Not enrolled — configure biometrics in Settings"
+                BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> "Unavailable — no supported biometric hardware"
+                BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> "Temporarily unavailable — try again later"
+                else -> "Unavailable — hardware or device policy may restrict access"
+            }
+        } catch (_: SecurityException) {
+            "Unavailable — access restricted"
+        }
+    } else {
+        "Unavailable — this check requires Android 10 or later"
+    }
+    return listOf(
+        DeveloperSignal("Device lock", lockStatus),
+        DeveloperSignal("Biometric authentication", biometricStatus),
+        DeveloperSignal("Operating system", "Android ${Build.VERSION.RELEASE} — review Software Update in Settings")
+    )
 }

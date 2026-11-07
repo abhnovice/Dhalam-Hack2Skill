@@ -1,155 +1,106 @@
-# Dhalam: local biometric access, optional Google sign-in, and Groq
+# Dhalam backend
 
-Users unlock with enrolled strong biometrics or choose **Sign in with Google**.
-Both options allow AI questions; users never enter backend URLs or API keys.
-Android performs biometric verification locally; the app never receives or stores
-biometric templates. No Google token is sent for local sessions. If a Google
-token is supplied, the backend verifies its signature, expiry, issuer, audience,
-subject and verified email. The Groq key stays only on the backend.
+One backend lives here. The former workspace-level `backend/` was consolidated
+into this directory. `app.py` preserves the native Android `/ask` contract;
+`triage/` implements text, image and URL scam triage for Android and iOS Flutter.
+Gemini on Vertex AI is the default provider. The previous Groq adapter remains
+available only for compatibility (`AI_PROVIDER=groq`), with its original tests.
 
-The AI endpoints intentionally accept requests without an identity token.
-Local biometric success is an app access gate, not remotely verified identity.
-Restart the backend after this update. Google OAuth setup below is optional
-and is needed only for the Google sign-in option.
+## Configuration and local run
 
-This replaces the demo-token setup. `DHALAM_API_TOKEN` is ignored, and Android
-deletes the retired saved demo configuration. No Firebase, password database,
-separate registration form, or custom verification-email flow is added.
-Google handles the account's credentials and email verification.
+Use the existing `fastapi-rag` conda environment (Python 3.11). All settings live
+in **this directory's `.env`**, moved here from the workspace root. Do not use
+shell exports or copy `.env` into a mobile application. Existing keys were
+preserved. Vertex uses Application Default Credentials locally and an attached
+service identity on Cloud Run; no service-account JSON key is needed.
 
-## One-time developer setup in Google Cloud
-
-Sign in with Google itself has no per-sign-in charge. This does not make Groq
-usage or backend hosting unlimited/free; their separate quotas still apply.
-
-1. Create/select a Google Cloud project and open **Google Auth Platform**.
-2. Configure Branding and Audience. While in Testing, add the Google accounts
-   that will test the app. Request only the basic identity/profile/email scopes.
-3. Create an OAuth client of type **Android** with package `com.dhalam.ap` and
-   your debug signing certificate SHA-1. Obtain SHA-1 from Android Studio's
-   Gradle `app > Tasks > android > signingReport` task. Register the release/Play
-   signing SHA-1 separately before distributing a signed release.
-4. Create an OAuth client of type **Web application** in the same project.
-   Copy its public client ID ending in `.apps.googleusercontent.com`.
-   Do not put an OAuth client secret in Android. This ID is the server audience;
-   it is not the Android OAuth client ID.
-5. Add the public Web client ID to the project-root `gradle.properties`:
-
-   ```properties
-   DHALAM_GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
-   ```
-
-6. In the ignored `backend/.env`, retain your Groq key and add:
-
-   ```dotenv
-   GROQ_API_KEY=your_server_side_groq_key
-   GROQ_MODEL=openai/gpt-oss-20b
-   GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
-   ```
-
-The Web client IDs in Android and the backend must match. These developer IDs
-are public configuration, not API keys. Re-sync Gradle/rebuild after changing
-Android configuration; restart the backend after changing its environment.
-The backend loads only `backend/.env` or existing environment variables.
-
-## Local development
-
-From the project root (Python 3.11+):
+From `Dhalam-Hack2Skill/`:
 
 ```bash
-python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
-backend/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 18765 --no-access-log
+conda activate fastapi-rag
+python -m pip install -r backend/requirements-dev.txt
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 18765 --no-access-log
 ```
 
-The debug app defaults to `http://10.0.2.2:18765` for the standard emulator.
-Use enrolled strong biometrics, or an emulator with Google Play and an account
-for Google sign-in. Android 17 may request local-network access for AI requests.
-Until biometric unlock or Google sign-in succeeds, dashboard, scans, search,
-export and navigation remain unavailable. Background scans are gated on the
-in-process session; a process restart requires unlocking again.
+If shell aliases select the wrong Python, use
+`/Users/anushajain/miniforge3/envs/fastapi-rag/bin/python` explicitly.
+The default `.env` selects `gemini-3.8-flash`, Vertex location `global` and the
+Dhalam AI project. `global` does not provide an India-only processing guarantee.
+Cloud Run's region is separately set to `asia-south1`.
 
-A release build has **no default backend URL**. It must have a deployed HTTPS
-endpoint before users can use Ask Dhalam away from your development computer.
-There is no endpoint/token settings dialog in the user interface.
+The `.env.example` documents the settings without credentials. Keep `.env`
+private. Never paste API keys into a mobile connection screen.
 
-## Physical phone or remote demo
+## Endpoints
 
-For a remote demo, you can expose the running backend
-through a temporary HTTPS tunnel, for example with an installed `cloudflared`:
+| Route | Behavior |
+| --- | --- |
+| `GET /health` | Process liveness; no model call |
+| `GET /` | Model/provider metadata; no credentials |
+| `POST /api/v1/analyze-threat` | Explicit consent plus message, URL and/or JPEG/PNG/WebP; validated structured Gemini assessment |
+| `POST /api/v1/coercion-check` | Compatibility helper; mobile evaluates capture warnings locally without uploading telemetry |
+| `GET /check` | Native Android compatibility configuration check |
+| `POST /ask` | Native Android evidence-grounded questions with validated evidence citations; defaults to Gemini |
+
+Triage requires `consent: true`. Text is limited to 12,000 characters, URLs to
+4,096 and images to 4 MiB / 20 megapixels. Image format is verified, EXIF is
+removed by pixel re-encoding, and generation uses bounded timeouts. The server
+never visits user-provided links or follows their redirects. Invalid input and
+provider errors do not echo the submitted content. Request-body logging is off;
+application code does not persist submissions. Google service retention policies
+still apply. The concern score is uncalibrated, not a measured probability.
+
+`SAFE_BROWSING_API_KEY` is optional and separate from the Gemini key. Without it,
+responses explicitly say reputation was not checked; Gemini only analyzes the
+URL text. The lookup adapter distinguishes a match, no match, unavailable service
+and missing configuration. No match is not a safety guarantee. Safe Browsing is
+for non-commercial use; a commercial bank product needs Web Risk or another
+appropriately licensed reputation provider. [Google usage terms](https://developers.google.com/safe-browsing/)
+
+## Deployment and checks
 
 ```bash
-cloudflared tunnel --url http://127.0.0.1:18765
+python -m pytest backend/test_app.py -q --rootdir=.
+python -m backend.check --live
+python -m backend.check --deploy
+python -m backend.check --cloud-auth
 ```
 
-This is an optional developer action, not something end users run. Use the
-returned HTTPS origin in project-root `gradle.properties`:
+`--live` makes one synthetic request using Cloud quota. It is a connectivity
+check, not an accuracy benchmark. `--deploy` reads `.env`, creates a dedicated
+`dhalam-runtime` service identity if needed, grants it `roles/aiplatform.user`,
+and deploys a **private** Cloud Run service with 0–2 instances and concurrency 4.
+Build, storage, hosting and inference can incur charges. The deployment writes
+the resulting `DHALAM_API_URL` back to `.env`. Source-upload and Docker allowlists
+exclude credentials, tests and documentation.
 
-```properties
-DHALAM_BACKEND_URL=https://YOUR_TEMPORARY_HOST.trycloudflare.com
-```
+Cloud Run IAM protects every deployed route. Local development is bound to
+loopback; do not expose it publicly. The optional native `/ask` Google sign-in
+verification is preserved, but it is not the same as Cloud Run IAM. Do not make
+the service public simply to bypass a 403. A consumer launch requires a complete
+mobile identity/token exchange, per-user abuse controls and a distribution plan.
 
-Rebuild the app. The phone does not need your computer's local IP or a shared
-password, but the backend computer and tunnel must remain running. A Quick
-Tunnel URL can change and has no uptime guarantee; use a stable HTTPS host for
-distribution. No public tunnel/deployment is created automatically by this code.
+For an authorized developer demo, use a short-lived `gcloud auth print-identity-token`
+result in Flutter's **Demo connection**, together with the Cloud Run URL. The
+token stays in screen memory and expires. Do not commit it, bake it into an APK,
+or use an API key as a substitute. The app sends it only to the configured HTTPS
+backend and refuses redirects. On emulator-only local runs use
+`http://10.0.2.2:18765`; iOS simulator can use loopback as platform policy permits.
 
-Only debug builds permit local HTTP for emulator/loopback hosts. Remote
-connections require HTTPS, and redirects are not followed with user credentials.
-Never bundle the Groq key in Gradle properties, BuildConfig or app resources.
+Native Android optional Google sign-in still requires Android OAuth client
+registration for `com.dhalam.ap` and its signing SHA-1, plus a Web OAuth client.
+The backend's `GOOGLE_WEB_CLIENT_ID` and native app audience must match. Cloud Run
+IAM and native OAuth are separate layers. Physical sign-in was not verified here.
 
-## API and lifecycle
+## Validation boundaries
 
-- `GET /health`: public process liveness, no Groq call.
-- `GET /check`: configuration status; verifies Google identity if supplied.
-- `POST /ask`: question and selected evidence → validated Groq answer; Google is optional.
+Automated tests cover the existing Android contract, identity errors, citation
+validation, input bounds, image validation, consent, sanitized errors, unknown
+capture state, and triage/reputation separation. A live synthetic text request
+succeeded with Gemini 3.8 Flash in approximately 8.6 seconds on November 7, 2026.
+This is one observation, not a latency guarantee. Do not claim 95% detection
+accuracy, sub-second inference, document authentication or automatic intervention.
 
-Local sessions omit Authorization. When supplied, the header contains a Google
-ID token; invalid/expired credentials return 401 and unverified email returns 403.
-Google configuration is required only for requests supplying Google credentials.
-
-Google tokens stay in the app's ViewModel memory and are never logged or saved
-to disk/backups. Rotation retains the session. Process restart or an expired
-token requires signing in again. Sign out or a rejected session immediately
-returns to the sign-in screen, clears displayed observations, cancels scan work,
-and prevents background collection. Sign out immediately clears app credentials,
-questions/results, and pending work, and clears Credential Manager state.
-This is local sign-out, not revocation of the Google account.
-
-The app displays an answer only after a user-initiated Send. It selects at most
-48 current saved facts using deterministic text matching and capability
-prioritization, declares limited coverage, and excludes retained older facts.
-The request is bounded to 90 KiB; the backend accepts at most 96 KiB/64 facts.
-Model citations are constrained to submitted IDs and revalidated before display.
-Blank optional recommendations/limitations are omitted.
-
-Embeddings, vector retrieval and numerical risk scoring are still deferred.
-No unrelated scan, export, database or navigation redesign is included.
-
-## Verification
-
-```bash
-backend/.venv/bin/python -m pytest backend/test_app.py -q
-backend/.venv/bin/python -m backend.check --url http://127.0.0.1:18765
-```
-
-The connectivity check does not require or print a user credential and does not
-claim a live Groq request succeeded. Automated tests mock Google/Groq and check
-rejected/expired identities, audience/issuer, verified email, auth service
-failures, evidence validation and upstream errors.
-
-After configuring the OAuth clients:
-1. Build/run the app, tap Sign in with Google and choose an authorized test account.
-2. Confirm sign-in is verified by the backend, then ask a question after a scan.
-3. Verify answer/evidence display, Sign out, and that the entire dashboard is replaced by the sign-in screen. Back must not reveal protected content.
-4. Test Cancel in the Google picker, no account, offline service and expired sign-in.
-5. Test a physical phone using the configured HTTPS endpoint.
-
-Without the real OAuth client IDs, the code can compile and be tested with
-mocks, but live Google sign-in cannot be verified. An ID token's profile label
-is only for display; authorization relies on server verification.
-
-Official references:
-- [Android Google sign-in](https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation)
-- [Backend ID-token verification](https://developers.google.com/identity/sign-in/android/backend-auth)
-- [Temporary tunnel limits](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
+References: [Gemini model](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash),
+[Google ID-token verification](https://developers.google.com/identity/sign-in/android/backend-auth),
+[Cybercrime reporting](https://cybercrime.gov.in/).

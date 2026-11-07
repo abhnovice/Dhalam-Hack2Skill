@@ -89,7 +89,8 @@ private val DhalamTypography = Typography()
 private enum class DashboardTab(val label: String, val iconRes: Int) {
     Access("Access", R.drawable.material_person),
     Permissions("AskDhalam", R.drawable.material_chat),
-    Developer("Developer", R.drawable.material_code)
+    Developer("Developer", R.drawable.material_code),
+    Tools("Tools", R.drawable.fluent_shield)
 }
 
 @Composable
@@ -107,7 +108,8 @@ fun SecurityDashboard(
     onAsk: () -> Unit,
     onClearAsk: () -> Unit,
     onSignIn: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    captureStatus: String = "Unavailable"
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Permissions.name) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -323,7 +325,19 @@ fun SecurityDashboard(
                             item("scan_error") { Text(scanError, color = colors.error) }
                         }
 
+                        item("capture_awareness") {
+                            Panel {
+                                Heading("Screen capture awareness")
+                                Caption(when (captureStatus) {
+                                    "Active" -> "Dhalam is visible in a recording. If unintended, stop screen recording or sharing before viewing private reports."
+                                    "Inactive" -> "No active capture reported for Dhalam."
+                                    else -> "Capture detection unavailable. Requires Android 15 or later and supported system detection."
+                                })
+                                Caption("While Dhalam is visible only; does not detect every capture method or captures of other apps.")
+                            }
+                        }
                         when (tab) {
+                            DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
                             DashboardTab.Permissions -> {
                                 item("permission_summary") {
                                     Panel(accent = true) {
@@ -381,6 +395,18 @@ fun SecurityDashboard(
                             }
 
                             DashboardTab.Developer -> {
+                                item("device_security") {
+                                    Panel {
+                                        Heading("Device security")
+                                        Caption("Configuration and availability checks, not passcode strength or proof of device safety.")
+                                        observation?.deviceSignals.orEmpty().forEach { signal ->
+                                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                                Text(signal.label)
+                                                Caption(signal.status)
+                                            }
+                                        }
+                                    }
+                                }
                                 item("developer_summary") {
                                     Panel {
                                         Heading("Developer tools")

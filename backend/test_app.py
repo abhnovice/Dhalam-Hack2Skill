@@ -250,3 +250,78 @@ def test_instruction_like_labels_remain_untrusted_user_data():
         return success()
     with client(handler) as api:
         assert api.post("/ask", json=payload, headers=AUTH).status_code == 200
+
+# Gemini triage shares the deployed backend; legacy /ask remains compatible.
+@pytest.mark.parametrize('payload', [
+    {'text': 'private sample'},
+    {'consent': True},
+    {'consent': True, 'url': 'file:///etc/passwd'},
+    {'consent': True, 'text': 'x' * 12001},
+    {'consent': True, 'image_base64': 'not-an-image'},
+])
+def test_triage_rejects_invalid_or_unconsented_input(payload, monkeypatch):
+    from backend.triage import main
+    async def forbidden(*args):
+        pytest.fail('Invalid submission reached AI')
+    monkeypatch.setattr(main, 'analyze_threat', forbidden)
+    with client(lambda request: pytest.fail('Triage reached Groq')) as api:
+        response = api.post('/api/v1/analyze-threat', json=payload)
+        assert response.status_code == 422
+        assert 'private sample' not in response.text
+
+
+def test_triage_success_and_reputation_are_distinct(monkeypatch):
+    from backend.triage import main
+    from backend.triage.schemas import ThreatAnalysisResponse
+    async def analyze(request):
+        return ThreatAnalysisResponse(scam_probability=70, threat_level='HIGH',
+            scam_category='Coercion', summary='Synthetic assessment', recommended_actions=['Pause.'])
+    async def reputation(url):
+        return 'unavailable', []
+    monkeypatch.setattr(main, 'analyze_threat', analyze)
+    monkeypatch.setattr(main, 'check_url_reputation', reputation)
+    with client(lambda request: pytest.fail('Triage reached Groq')) as api:
+        response = api.post('/api/v1/analyze-threat', json={'consent': True, 'text': 'Synthetic message'})
+        assert response.status_code == 200
+        assert response.json()['url_reputation'] == 'unavailable'
+        assert response.json()['model']
+        assert response.json()['analyzed_at']
+
+
+def test_triage_never_exposes_provider_error(monkeypatch):
+    from backend.triage import main
+    async def fail(request):
+        raise RuntimeError('private upstream content')
+    monkeypatch.setattr(main, 'analyze_threat', fail)
+    with client(lambda request: success()) as api:
+        response = api.post('/api/v1/analyze-threat', json={'consent': True, 'text': 'test'})
+        assert response.status_code == 502
+        assert 'private upstream content' not in response.text
+
+
+def test_triage_streamed_limit():
+    with client(lambda request: success()) as api:
+        response = api.post('/api/v1/analyze-threat', content=iter([b'x' * 3_000_000, b'x' * 3_000_000]))
+        assert response.status_code == 413
+
+
+def test_unknown_capture_is_not_a_safe_verdict():
+    with client(lambda request: success()) as api:
+        response = api.post('/api/v1/coercion-check', json={})
+        assert response.json()['severity'] == 'UNKNOWN'
+        response = api.post('/api/v1/coercion-check', json={'screen_capture_active': True, 'accessibility_services_enabled': ['screen.reader']})
+        assert response.json()['severity'] == 'HIGH'
+        assert 'legitimate' in response.json()['message']
+
+
+def test_image_validation_and_mime_mismatch():
+    import base64
+    from io import BytesIO
+    from PIL import Image
+    from backend.triage.schemas import ThreatAnalysisRequest
+    out = BytesIO()
+    Image.new('RGB', (10, 10)).save(out, format='PNG')
+    encoded = base64.b64encode(out.getvalue()).decode()
+    assert ThreatAnalysisRequest(consent=True, image_base64=encoded, image_mime_type='image/png')
+    with pytest.raises(ValueError):
+        ThreatAnalysisRequest(consent=True, image_base64=encoded, image_mime_type='image/jpeg')

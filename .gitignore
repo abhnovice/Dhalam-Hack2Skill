@@ -1,21 +1,35 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+# Local configuration and credentials
 .env
 .env.*
 !.env.example
+*service-account*.json
+*.jks
+*.keystore
+**/key.properties
+local.properties
+
+# IDE and OS state
+.idea/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Generated builds and dependency caches
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.dart_tool/
+Pods/
+ephemeral/
+
+# ObjectBox schema backups (keep default.json tracked)
+app/objectbox-models/*.bak

@@ -56,6 +56,11 @@ class MainActivity : FragmentActivity() {
         if (granted) action?.invoke()
         else askViewModel.showError("Local network access was denied. Allow Nearby devices in App settings, then retry.")
     }
+    private val captureStatus = mutableStateOf("Unavailable")
+    private val capture by lazy { CaptureMonitor(this) { captureStatus.value = it } }
+    override fun onStart() { super.onStart(); capture.start() }
+    override fun onStop() { capture.stop(); super.onStop() }
+
     private val observation = mutableStateOf<SecurityObservation?>(null)
     private val scanning = mutableStateOf(false)
     private var scanJob: Job? = null
@@ -116,6 +121,7 @@ class MainActivity : FragmentActivity() {
                 onOpenAccessibility = {
                     openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 },
+                captureStatus = captureStatus.value,
                 onOpenDeveloperOptions = {
                     openSettings(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
                 },
@@ -153,6 +159,8 @@ class MainActivity : FragmentActivity() {
         scanning.value = true
         scanError.value = null
 
+        val captured = captureStatus.value
+        val notifications = notificationsEnabled.value
         scanJob = lifecycleScope.launch {
             try {
                 observation.value = withContext(Dispatchers.IO) {
@@ -161,6 +169,7 @@ class MainActivity : FragmentActivity() {
                         if (!AppSessionAccess.signedIn) throw CancellationException("Signed out")
                         val repository = SecurityStore.repository(applicationContext)
                         repository.saveObservation(snapshot)
+                        SecurityJournalStore.record(applicationContext, snapshot, notifications, captured)
                         Log.i("DhalamStorage", "Foreground scan saved. Stored facts: ${repository.count()}")
                     }
                 }
