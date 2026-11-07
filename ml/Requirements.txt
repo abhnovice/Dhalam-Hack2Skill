@@ -1,0 +1,15 @@
+
+# Dhalam v0.1 — Python dependencies for the ML training/export pipeline
+# Install into the existing DefaultEnvironment; no new environment required.
+
+# Synthetic dataset and numerical feature matrix
+numpy
+pandas
+
+# Train and evaluate a small supervised classifier
+scikit-learn
+
+# Convert trained scikit-learn model to ONNX and validate it on desktop
+skl2onnx
+onnx
+onnxruntime
