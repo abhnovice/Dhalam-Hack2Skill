@@ -7,6 +7,7 @@
 *.keystore
 **/key.properties
 local.properties
+backend/.env
 
 # IDE and OS state
 .idea/
