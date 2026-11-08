@@ -32,13 +32,22 @@ void main() {
       MaterialApp(home: SecurityToolsScreen(journal: journal, ios: true)),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Needs attention · 1'), findsOneWidget);
-    expect(find.text('Unavailable · 1'), findsOneWidget);
-    await tester.tap(find.text('Unavailable · 1'));
+    expect(
+      find.byKey(const ValueKey('finding-filter-Needs attention')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('finding-filter-Unavailable')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('finding-filter-Unavailable')),
+    );
+    await tester.tap(find.byKey(const ValueKey('finding-filter-Unavailable')));
     await tester.pumpAndSettle();
     expect(find.text('Device lock · Needs attention'), findsNothing);
     expect(find.text('Biometric authentication · Unavailable'), findsOneWidget);
-    await tester.tap(find.text('Configured · 0'));
+    await tester.tap(find.byKey(const ValueKey('finding-filter-Configured')));
     await tester.pumpAndSettle();
     expect(find.text('No recorded findings in this category.'), findsOneWidget);
     await tester.tap(find.text('Show all findings'));

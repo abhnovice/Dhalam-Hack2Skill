@@ -53,8 +53,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Run security check'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Device security'), 200);
+    await tester.tap(find.text('Device security'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Device lock'), 200);
     expect(find.text('Configured'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Accessibility services'), 200);
+    await tester.ensureVisible(find.text('Accessibility services'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Accessibility services'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Not available on iOS.'), 250);
     expect(find.text('Not available on iOS.'), findsOneWidget);
     expect(find.text('Open accessibility settings'), findsNothing);
@@ -353,6 +361,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: DashboardScreen()));
     await tester.pumpAndSettle();
     expect(changes, 0);
+    await tester.scrollUntilVisible(find.text('Periodic local checks'), 200);
+    await tester.tap(find.text('Periodic local checks'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.byType(SwitchListTile),
       250,

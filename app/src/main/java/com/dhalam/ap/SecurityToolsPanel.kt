@@ -32,6 +32,7 @@ fun SecurityToolsPanel(observedAt: Long?) {
     var inspection by remember { mutableStateOf<LinkInspection?>(null) }
     var preview by remember { mutableStateOf<String?>(null) }
     var clearPrompt by remember { mutableStateOf(false) }
+    var expandedFinding by remember { mutableStateOf<String?>(null) }
     var findingFilter by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf<Long?>(null) }
 
@@ -65,7 +66,7 @@ fun SecurityToolsPanel(observedAt: Long?) {
         dismissButton = { TextButton(onClick = { preview = null }) { Text("Close") } })
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Security tools", style = MaterialTheme.typography.headlineSmall)
+        Text("Security overview", style = MaterialTheme.typography.headlineSmall)
         Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
             listOf("Findings", "History", "Privacy review", "Link inspector", "Report").forEach { label ->
                 FilterChip(selected = tab == label, onClick = { tab = label }, label = { Text(label) }, modifier = Modifier.padding(end = 8.dp))
@@ -74,28 +75,30 @@ fun SecurityToolsPanel(observedAt: Long?) {
         if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
         when (tab) {
             "Findings" -> {
-                Text("Latest recorded findings. Run a new scan after changing settings.")
-                if (journal.records.isEmpty()) Text("No checks recorded yet.")
+                if (journal.records.isEmpty()) Text("Run a scan to see your device review.")
                 journal.records.firstOrNull()?.let { record ->
-                    Text("Observed at ${securityStamp(record.at)}")
-                    // A vertical layout preserves labels at large font sizes.
-                    (listOf("Needs attention", "Configured", "Manual review", "Unavailable") + record.findings.map { it.state }).distinct().forEach { state ->
-                        FilterChip(selected = findingFilter == state,
-                            onClick = { findingFilter = if (findingFilter == state) null else state },
-                            label = { Text("$state · ${record.findings.count { it.state == state }}") },
-                            leadingIcon = { Text(when (state) { "Needs attention" -> "!"; "Configured" -> "✓"; "Unavailable" -> "?"; else -> "☷" }) },
-                            modifier = Modifier.fillMaxWidth())
-                    }
+                    FindingsOverview(record.findings, findingFilter) { findingFilter = it }
+                    Text("Observed " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(record.at)), style = MaterialTheme.typography.bodySmall)
                     if (findingFilter != null) TextButton(onClick = { findingFilter = null }) { Text("Show all findings") }
                     if (findingFilter != null && record.findings.none { it.state == findingFilter }) Text("No recorded findings in this category.")
                 }
                 journal.records.firstOrNull()?.findings?.filter { findingFilter == null || it.state == findingFilter }?.forEach { finding ->
-                    Card { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${finding.title} · ${finding.state}", style = MaterialTheme.typography.titleMedium)
-                        Text(finding.detail)
-                        Text(finding.action)
-                        Text("Last readable result: ${journal.lastSuccess(finding.title)?.let(::securityStamp) ?: "Never recorded"}")
-                    } }
+                    OutlinedCard(onClick = { expandedFinding = if (expandedFinding == finding.title) null else finding.title }, colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(finding.title, style = MaterialTheme.typography.titleSmall)
+                                    Text(finding.state, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text(if (expandedFinding == finding.title) "−" else "+")
+                            }
+                            if (expandedFinding == finding.title) {
+                                Text(finding.detail)
+                                Text(finding.action)
+                                Text("Last readable: ${journal.lastSuccess(finding.title)?.let(::securityStamp) ?: "Never recorded"}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
             }
             "History" -> {

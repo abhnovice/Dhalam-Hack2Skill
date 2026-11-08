@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../features/security_tools.dart';
 import 'triage_screen.dart';
+import 'findings_overview.dart';
 
 class SecurityToolsScreen extends StatefulWidget {
   final SecurityJournal journal;
@@ -127,46 +128,19 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                   child: TabBarView(
                     children: [
                       _list([
-                        const Text(
-                          'Latest recorded findings. Run a new security check from the dashboard after changing settings.',
-                        ),
                         if (j.records.isEmpty)
-                          const Text('No checks recorded yet.'),
+                          const Text('Run a scan to see your device review.'),
                         if (j.records.isNotEmpty) ...[
-                          Text('Observed at ${stamp(j.records.first.at)}'),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final state in {
-                                'Needs attention',
-                                'Configured',
-                                'Manual review',
-                                'Unavailable',
-                                ...j.records.first.findings.map((f) => f.state),
-                              })
-                                FilterChip(
-                                  avatar: Icon(
-                                    state == 'Needs attention'
-                                        ? Icons.warning_amber
-                                        : state == 'Configured'
-                                        ? Icons.check_circle_outline
-                                        : state == 'Unavailable'
-                                        ? Icons.help_outline
-                                        : Icons.checklist,
-                                    size: 20,
-                                  ),
-                                  label: Text(
-                                    '$state · ${j.records.first.findings.where((f) => f.state == state).length}',
-                                  ),
-                                  selected: _findingFilter == state,
-                                  onSelected: (selected) => setState(
-                                    () => _findingFilter = selected
-                                        ? state
-                                        : null,
-                                  ),
-                                ),
-                            ],
+                          FindingsOverview(
+                            findings: j.records.first.findings,
+                            selected: _findingFilter,
+                            onSelected: (value) =>
+                                setState(() => _findingFilter = value),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Observed ${MaterialLocalizations.of(context).formatShortDate(DateTime.fromMillisecondsSinceEpoch(j.records.first.at))} · ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(j.records.first.at)).format(context)}',
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                           if (_findingFilter != null)
                             TextButton(
@@ -189,26 +163,30 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                                       _findingFilter == null ||
                                       f.state == _findingFilter,
                                 ))
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${f.title} · ${f.state}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  Text(f.detail),
-                                  const SizedBox(height: 8),
-                                  Text(f.action),
-                                  Text(
-                                    'Last readable result: ${j.lastSuccess(f.title) == null ? 'Never recorded' : stamp(j.lastSuccess(f.title)!)}',
-                                  ),
-                                ],
+                          Card.outlined(
+                            color: Theme.of(context).colorScheme.surface,
+                            child: ExpansionTile(
+                              title: Text(
+                                '${f.title} · ${f.state}',
+                                style: Theme.of(context).textTheme.titleSmall,
                               ),
+                              childrenPadding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                16,
+                              ),
+                              expandedCrossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(f.detail),
+                                const SizedBox(height: 8),
+                                Text(f.action),
+                                Text(
+                                  'Last readable result: ${j.lastSuccess(f.title) == null ? 'Never recorded' : stamp(j.lastSuccess(f.title)!)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
                           ),
                       ]),

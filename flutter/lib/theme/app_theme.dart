@@ -26,23 +26,27 @@ class AppTheme {
   static const _darkOnSurfaceVariant = Color(0xFFB8CCC3);
 
   static TextTheme _buildTextTheme(TextTheme base) {
-    const fontFamily = 'sans-serif';
-    return base.copyWith(
-      headlineSmall: base.headlineSmall?.copyWith(fontFamily: fontFamily),
-      titleMedium: base.titleMedium?.copyWith(fontFamily: fontFamily),
-      bodyLarge: base.bodyLarge?.copyWith(fontFamily: fontFamily),
-      bodyMedium: base.bodyMedium?.copyWith(fontFamily: fontFamily),
-      bodySmall: base.bodySmall?.copyWith(fontFamily: fontFamily),
-      labelLarge: base.labelLarge?.copyWith(fontFamily: fontFamily),
-      labelMedium: base.labelMedium?.copyWith(fontFamily: fontFamily),
-      labelSmall: base.labelSmall?.copyWith(fontFamily: fontFamily),
-    );
+    return base.apply(fontFamily: 'IBM Plex Sans');
   }
 
   static ThemeData get lightTheme {
     final base = ThemeData.light(useMaterial3: true);
     return base.copyWith(
       colorScheme: const ColorScheme.light(
+        secondary: Color(0xFF48635E),
+        onSecondary: Colors.white,
+        tertiary: Color(0xFF48635E),
+        onTertiary: Colors.white,
+        tertiaryContainer: Color(0xFFE0EAE7),
+        onTertiaryContainer: Color(0xFF20332E),
+        outline: Color(0xFF70847D),
+        outlineVariant: Color(0xFFD4E0DB),
+        surfaceTint: Colors.transparent,
+        surfaceContainerLowest: Colors.white,
+        surfaceContainerLow: Color(0xFFF4F8F6),
+        surfaceContainer: Color(0xFFEEF4F1),
+        surfaceContainerHigh: Color(0xFFE7EFEB),
+        surfaceContainerHighest: Color(0xFFDFE9E4),
         primary: _lightPrimary,
         onPrimary: _lightOnPrimary,
         primaryContainer: _lightPrimaryContainer,
@@ -62,6 +66,20 @@ class AppTheme {
     final base = ThemeData.dark(useMaterial3: true);
     return base.copyWith(
       colorScheme: const ColorScheme.dark(
+        secondary: Color(0xFFB4CDC3),
+        onSecondary: Color(0xFF20332E),
+        tertiary: Color(0xFFB4CDC3),
+        onTertiary: Color(0xFF20332E),
+        tertiaryContainer: Color(0xFF30463D),
+        onTertiaryContainer: Color(0xFFD2F0E6),
+        outline: Color(0xFF8A9E95),
+        outlineVariant: Color(0xFF3C5147),
+        surfaceTint: Colors.transparent,
+        surfaceContainerLowest: Color(0xFF0C1410),
+        surfaceContainerLow: Color(0xFF17231D),
+        surfaceContainer: Color(0xFF1D2C24),
+        surfaceContainerHigh: Color(0xFF26372D),
+        surfaceContainerHighest: Color(0xFF304339),
         primary: _darkPrimary,
         onPrimary: _darkOnPrimary,
         primaryContainer: _darkPrimaryContainer,

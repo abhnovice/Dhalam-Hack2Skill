@@ -2,6 +2,7 @@ import 'dart:async';
 import '../features/security_tools.dart';
 import 'security_tools_screen.dart';
 import 'triage_screen.dart';
+import 'sensitive_permission_chart.dart';
 import 'package:flutter/material.dart';
 import '../models/security_models.dart';
 import '../services/notification_service.dart';
@@ -28,7 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool? _notifications;
   String? _error;
   String _search = '';
-  bool _sensitiveOnly = false;
+  bool _sensitiveOnly = true;
   bool _returningFromSettings = false;
   Map<String, dynamic>? _background;
 
@@ -156,17 +157,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Widget _section(String title, List<Widget> children) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
+  Widget _section(String title, List<Widget> children) => Card.outlined(
+    color: Theme.of(context).colorScheme.surface,
+    child: ExpansionTile(
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     ),
   );
 
@@ -211,7 +208,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Security dashboard',
+                  'Device overview',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 12),
@@ -227,6 +224,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                   label: Text(_scanning ? 'Checking…' : 'Run security check'),
                 ),
                 if (_scanning) const LinearProgressIndicator(),
+                if (!ios && observation?.permissionInventory != null)
+                  SensitivePermissionChart(
+                    inventory: observation!.permissionInventory!,
+                  ),
+
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -237,22 +239,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                   ),
-                _section('Screen capture awareness', [
-                  Text(
-                    _capture == 'Active'
-                        ? 'Dhalam is visible in a capture session.'
-                        : _capture == 'Inactive'
-                        ? 'No active capture reported for Dhalam.'
-                        : 'Capture detection unavailable on this device or OS.',
-                  ),
-                  const Text(
-                    'While Dhalam is visible only. This cannot detect every recording or capture of other apps.',
-                  ),
-                  if (_capture == 'Active')
-                    const Text(
-                      'If unintended, stop screen recording or sharing before viewing private information.',
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.screen_share_outlined),
+                  title: Text('Screen capture · $_capture'),
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        'Supported detection while Dhalam is visible only. This cannot detect every recording or capture of other apps.',
+                      ),
                     ),
-                ]),
+                  ],
+                ),
                 OutlinedButton(
                   onPressed: _openTools,
                   child: const Text(
@@ -409,7 +408,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     if (!ios)
                       FilterChip(
-                        label: const Text('Sensitive permissions'),
+                        label: const Text('Sensitive permissions only'),
                         selected: _sensitiveOnly,
                         onSelected: (value) =>
                             setState(() => _sensitiveOnly = value),

@@ -1,6 +1,11 @@
 package com.dhalam.ap
 
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.foundation.layout.height
+import com.dhalam.ap.ui.theme.LightColors
+import com.dhalam.ap.ui.theme.DarkColors
+import com.dhalam.ap.ui.theme.Typography as DhalamTypography
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,42 +62,11 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF006B60),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFB6F1E5),
-    onPrimaryContainer = Color(0xFF002822),
-    secondaryContainer = Color(0xFFD2EDE5),
-    onSecondaryContainer = Color(0xFF153D34),
-    background = Color(0xFFF4F9F7),
-    onBackground = Color(0xFF14211D),
-    surface = Color.White,
-    onSurface = Color(0xFF14211D),
-    onSurfaceVariant = Color(0xFF475952)
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF8FE7D6),
-    onPrimary = Color(0xFF00382F),
-    primaryContainer = Color(0xFF16483F),
-    onPrimaryContainer = Color(0xFFB1F4E6),
-    secondaryContainer = Color(0xFF25483E),
-    onSecondaryContainer = Color(0xFFD2F0E6),
-    background = Color(0xFF101715),
-    onBackground = Color(0xFFE5EFEB),
-    surface = Color(0xFF1A2521),
-    onSurface = Color(0xFFE5EFEB),
-    onSurfaceVariant = Color(0xFFB8CCC3)
-)
-
-// Material 3 defaults use Android’s built-in Roboto family, including all type roles.
-private val DhalamTypography = Typography()
-
 private enum class DashboardTab(val label: String, val iconRes: Int) {
     Triage("Scam check", R.drawable.material_search),
     Access("Access", R.drawable.material_person),
-    Permissions("AskDhalam", R.drawable.material_chat),
-    Developer("Developer", R.drawable.material_code),
+    Permissions("Ask Dhalam", R.drawable.material_chat),
+    Developer("Settings", R.drawable.material_code),
     Tools("Tools", R.drawable.fluent_shield)
 }
 
@@ -117,6 +91,9 @@ fun SecurityDashboard(
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
     var query by rememberSaveable { mutableStateOf("") }
+    var askOpen by rememberSaveable { mutableStateOf(false) }
+    var accountOpen by remember { mutableStateOf(false) }
+    var captureOpen by remember { mutableStateOf(false) }
 
     var showExports by rememberSaveable { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
@@ -184,6 +161,10 @@ fun SecurityDashboard(
     ) {
         val colors = MaterialTheme.colorScheme
 
+        if (accountOpen) AlertDialog(onDismissRequest = { accountOpen = false },
+            title = { Text("Your account") }, text = { Text(askState.accountLabel ?: "Dhalam session") },
+            confirmButton = { TextButton(onClick = { accountOpen = false; onSignOut() }) { Text("Sign out") } },
+            dismissButton = { TextButton(onClick = { accountOpen = false }) { Text("Close") } })
         if (showExports) {
             AlertDialog(
                 onDismissRequest = { showExports = false },
@@ -234,9 +215,6 @@ fun SecurityDashboard(
             bottomBar = {
                 Surface(color = colors.surface, contentColor = colors.onSurface, tonalElevation = 2.dp) {
                     Column(Modifier.imePadding()) {
-                        if (tab == DashboardTab.Permissions) {
-                            AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
-                        }
 
                         NavigationBar(
                             containerColor = colors.surface,
@@ -244,6 +222,7 @@ fun SecurityDashboard(
                         ) {
                             DashboardTab.values().forEach { destination ->
                                 NavigationBarItem(
+                                    colors = NavigationBarItemDefaults.colors(selectedTextColor = colors.primary, selectedIconColor = colors.primary, indicatorColor = colors.secondaryContainer, unselectedTextColor = colors.onSurfaceVariant),
                                     selected = tab == destination,
                                     onClick = { selectedTab = destination.name },
                                     icon = {
@@ -275,16 +254,17 @@ fun SecurityDashboard(
                     Image(
                         painter = painterResource(R.drawable.dhalam_logo_transparent),
                         contentDescription = "Dhalam logo",
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                     Column(Modifier.weight(1f)) {
-                        Caption(lastScan?.let { "Last scan · $it" } ?: "Device review")
-                        TextButton(onClick = onSignOut) { Text("Log out") }
+                        Text("Dhalam", style = MaterialTheme.typography.titleMedium)
+                        Caption(lastScan?.let { "Checked $it" } ?: "Device review")
                     }
+                    TextButton(onClick = { accountOpen = true }) { Text("Account") }
                     Button(onClick = onScan, enabled = !scanning) {
                         Icon(painterResource(R.drawable.material_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
                         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-                        Text(if (scanning) "Scanning…" else "Scan now")
+                        Text(if (scanning) "Checking…" else "Scan")
                     }
                 }
                 if (captureStatus == "Active") {
@@ -297,25 +277,6 @@ fun SecurityDashboard(
                             }
                         }
                     }
-                }
-                if (tab == DashboardTab.Permissions) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        leadingIcon = {
-                            Icon(painterResource(R.drawable.material_search), contentDescription = null)
-                        },
-                        label = { Text("Find an app or permission") },
-                        placeholder = { Text("App name, package, camera, location…") },
-                        trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                TextButton(onClick = { query = "" }) { Text("Clear") }
-                            }
-                        }
-                    )
                 }
 
                 if (tab == DashboardTab.Triage) {
@@ -343,46 +304,33 @@ fun SecurityDashboard(
                             item("scan_error") { Text(scanError, color = colors.error) }
                         }
 
-                        item("capture_awareness") {
-                            Panel {
-                                Heading("Screen capture awareness")
-                                Caption(when (captureStatus) {
-                                    "Active" -> "Dhalam is visible in a recording. If unintended, stop screen recording or sharing before viewing private reports."
-                                    "Inactive" -> "No active capture reported for Dhalam."
-                                    else -> "Capture detection unavailable. Requires Android 15 or later and supported system detection."
-                                })
-                                Caption("While Dhalam is visible only; does not detect every capture method or captures of other apps.")
+                        if (tab == DashboardTab.Developer) item("capture_awareness") {
+                            TextButton(onClick = { captureOpen = !captureOpen }) {
+                                Text("Screen capture · $captureStatus  ${if (captureOpen) "−" else "+"}")
                             }
+                            if (captureOpen) Caption("Supported detection while Dhalam is visible only. Does not detect every recording method or captures of other apps.")
                         }
                         when (tab) {
                             DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel(analyze = onAnalyze, onSignIn = onSignIn) }
                             DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
                             DashboardTab.Permissions -> {
                                 item("permission_summary") {
-                                    Panel(accent = true) {
-                                        TextButton(
-                                            onClick = { showExports = true },
-                                            enabled = inventory != null && !exporting
-                                        ) { Heading("Permission report") }
-                                        Caption(if (exporting) "Exporting…" else "Tap Permission report to export CSV")
-                                        exportMessage?.let { Caption(it) }
-                                        Text(
-                                            when {
-                                                inventory != null ->
-                                                    "${inventory.packageCount} apps · " +
-                                                            "${inventory.permissions.size} permissions"
-                                                scanning -> "Reading permissions…"
-                                                else -> "Permission inventory unavailable"
-                                            }
-                                        )
-                                        Caption("Visible apps in this Android profile")
-                                    }
+                                    Text("Device access", style = MaterialTheme.typography.headlineMedium)
+                                    Caption("${inventory?.packageCount ?: 0} visible apps · ${lastScan?.let { "observed $it" } ?: "run a scan to begin"}")
+                                    if (inventory != null && search.isEmpty()) SensitivePermissionChart(inventory) { query = it }
+                                    TextButton(onClick = { askOpen = !askOpen }) { Text(if (askOpen) "Close Ask Dhalam" else "Ask Dhalam  →") }
+                                    if (askOpen) AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
+                                }
+                                item("permission_search") {
+                                    OutlinedTextField(value = query, onValueChange = { query = it },
+                                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                                        shape = RoundedCornerShape(16.dp), label = { Text("Find an app or permission") },
+                                        trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("Clear") } })
+                                    TextButton(onClick = { showExports = true }, enabled = inventory != null && !exporting) { Text("Export permission report") }
+                                    exportMessage?.let { Caption(it) }
                                 }
 
                                 if (inventory != null) {
-                                    if (search.isEmpty()) items(inventory.permissions, key = { "overview:${it.name}" }) {
-                                        PermissionRow(it, "")
-                                    }
                                     when {
                                         search.isEmpty() -> item("search_hint") {
                                             Caption("Search by app name, package name, or permission. Grants describe access, not actual use.")
@@ -478,7 +426,7 @@ private fun PermissionRow(report: PermissionReport, search: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Heading(permissionTitle(report.name))
-                Caption("${report.grantedCount} granted · ${report.apps.size} requested")
+                Caption("${report.apps.size} apps requested access")
             }
             TextButton(onClick = { expanded = !expanded }) {
                 Text(if (expanded) "Hide" else "View apps")
@@ -543,7 +491,7 @@ private fun Panel(accent: Boolean = false, content: @Composable () -> Unit) {
         contentColor = if (accent) colors.onPrimaryContainer else colors.onSurface
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             content()

@@ -49,7 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val SignInBrandFont = FontFamily.SansSerif
+private val SignInBrandFont = com.dhalam.ap.ui.theme.BrandFont
 
 /** Protected content requires Google sign-in, local biometric unlock, or debug-only temporary login. */
 @Composable
@@ -68,11 +68,8 @@ fun AuthenticatedContent(
     var showTemporarySignIn by remember { mutableStateOf(false) }
     val dark = isSystemInDarkTheme()
     MaterialTheme(
-        colorScheme = if (dark) {
-            darkColorScheme(background = Color(0xFF071A20), primary = Color(0xFF69E3DF))
-        } else {
-            lightColorScheme(background = Color(0xFFF7FAFB), primary = Color(0xFF006B69))
-        }
+        colorScheme = if (dark) com.dhalam.ap.ui.theme.DarkColors else com.dhalam.ap.ui.theme.LightColors,
+        typography = com.dhalam.ap.ui.theme.Typography
     ) {
         if (BuildConfig.DEBUG && showTemporarySignIn) {
             TemporarySignInDialog(
@@ -171,7 +168,7 @@ fun AuthenticatedContent(
                         )
                         Text(
                             "Sign in with Google",
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = com.dhalam.ap.ui.theme.BrandFont,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,

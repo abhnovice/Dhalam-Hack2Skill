@@ -137,3 +137,14 @@ Test the proposed screens against the existing screens with 5–8 representative
 Measure whether users can identify the next action, explain one warning sign, locate a changed setting and distinguish “unavailable” from “configured.” Also ask whether a low concern result guarantees safety. Record completion time, wrong taps, misunderstandings and requests for help; do not rely only on visual preference ratings.
 
 Implementation checks should cover empty history, first observation, failed/stale readings, unavailable platform features, long translated text, unknown result values, and large text. Confirm identical status semantics across all three builds. Add targeted tests for count/filter correctness and state transitions when implemented; no runtime tests are needed for this research-only document.
+
+
+## Layout redesign completed — November 8, 2026
+
+- Native Ask Dhalam leads with five sensitive-permission bars, with chat collapsed behind “Ask Dhalam”. A compact header provides one Account control.
+- Findings in both clients use a donut, count filters, and expandable details. The counts describe recorded checks, not a safety score.
+- Flutter Android places the sensitive-permission chart directly below the scan action; rows expand to show apps. Detailed settings panels are collapsed by default on both Flutter platforms. iOS retains guided reviews and explicit platform limitations.
+- Both clients bundle IBM Plex Sans and its OFL license for offline use. Teal/neutral theme roles replace the default purple card, outline, and selected-navigation colors.
+- Validation: Flutter analysis clean; 22 Flutter tests pass; native debug build and JVM tests pass; Flutter Android debug APK and ARM64 iOS simulator build pass.
+- Visually reviewed the rebuilt native Device and Tools screens on the API 36 emulator. Screenshots: [Device](interact-with-app/screenshots/native-device-redesign.png), [Tools](interact-with-app/screenshots/native-tools-redesign.png). Flutter runtime visual review and physical-device review remain pending.
+- Debug APKs rebuilt in their normal build directories. Distributable packages in `build/apks/` were not replaced.

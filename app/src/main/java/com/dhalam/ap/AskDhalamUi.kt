@@ -47,7 +47,7 @@ fun AskDhalamInput(
             if (state.signedIn) {
                 Text(state.accountLabel ?: "Signed in", modifier = Modifier.weight(1f).padding(top = 12.dp),
                     maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = onSignOut) { Text("Sign out") }
+
             } else {
                 OutlinedButton(onClick = onSignIn, enabled = !state.signingIn && !state.loading) {
                     Text(if (state.signingIn) "Signing in…" else "Sign in with Google")
