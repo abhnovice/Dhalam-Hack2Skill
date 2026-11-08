@@ -95,12 +95,9 @@ six submissions); earlier images are not resent. New chat clears the in-memory
 conversation. Submissions are not saved in the local journal.
 Device inventories are never included in Flutter cloud requests.
 
-The private Cloud Run developer demo URL is saved as `DHALAM_API_URL` in
-`../backend/.env`. Enter that public URL and a short-lived
-Cloud Run identity token under **Chat options → Demo connection**. These are session-only. Never
-pass the entire backend `.env` via `--dart-define-from-file`—it contains secrets.
-The `DHALAM_API_URL` Dart define may carry the public URL only; no shell exports
-are needed. See the backend README for local development and deployment.
+The hosted Cloud Run URL is configured in the prebuilt release packages (`https://dhalam-api-xxpghctsqq-el.a.run.app`).
+For custom builds, pass `--dart-define=DHALAM_API_URL=https://dhalam-api-xxpghctsqq-el.a.run.app` to `flutter build apk` or `flutter build ipa`.
+Prebuilt artifacts are in `../build/apks/dhalam-flutter-android.apk` and `../build/apks/dhalam-flutter-ios.ipa`.
 
 Results distinguish the uncalibrated AI concern score, extracted evidence,
 actions, and actual URL reputation status. A model cannot authenticate a legal

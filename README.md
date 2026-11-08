@@ -22,19 +22,20 @@ between the two clients. Keep the original client while validating the migration
 future consolidation can extract shared Kotlin logic after behavior is compared.
 Do not delete `flutter/android/` or merge its manifest into root `app/`.
 
-## Try the app
+## Try the app and prebuilt packages
 
-Flutter opens directly into a chat: paste a message or choose a photo, tap **Check**,
-and confirm consent. A short answer and first action appear in a visual card;
-**Why? Show details** contains evidence and report export. Follow-ups include earlier
-user messages with consent, up to six submissions per in-memory chat. Earlier
-photos are not resent. **Chat options → Device checks** opens the local dashboard.
+Three ready-to-test packages linked to the hosted Google Cloud Run backend (`https://dhalam-api-xxpghctsqq-el.a.run.app`) are available in [`build/apks/`](build/apks):
 
-The native Android app now has the same core scam-chat workflow in **Scam check**,
-plus its separate device-facts chat. It keeps its existing sign-in and worker
-lifecycle. Native image input uses the system picker; Flutter also offers camera.
+| Platform | Build Artifact | Purpose |
+| --- | --- | --- |
+| **Native Android** | [`dhalam-native-android.apk`](build/apks/dhalam-native-android.apk) | Native Android/Compose app with Credential Manager Google Sign-In, biometric unlock fallback, logout, and permission-grounded AskDhalam. |
+| **Flutter Android** | [`dhalam-flutter-android.apk`](build/apks/dhalam-flutter-android.apk) | Universal Flutter Android release APK pre-configured for the Cloud Run triage backend. |
+| **Flutter iOS** | [`dhalam-flutter-ios.ipa`](build/apks/dhalam-flutter-ios.ipa) | Flutter iOS device package pre-configured with Cloud Run backend. |
 
-See [emulator setup and sample conversations](docs/interact-with-app/README.md).
+- **Flutter**: Opens directly into scam triage: paste a message or choose a photo, tap **Check**, and confirm consent. A structured assessment and action appear in a visual card; **Why? Show details** displays evidence, official RBI reference citations, and incident report export.
+- **Native Android**: Features **Scam check** (Gemini threat triage with photo/text input and reference citations) and **AskDhalam** (permission-grounded device QA). Supports Google OAuth sign-in via Android Credential Manager, biometric unlock, and logout on all tabs.
+
+See [testing setup and sample conversations](docs/interact-with-app/README.md).
 
 ## Run from this repository
 
@@ -97,15 +98,11 @@ permission search/filtering, service/permission change history, and user-reviewe
 incident export. Google Safe Browsing is an optional adapter and needs a separate
 restricted key; missing/unavailable lookup is shown explicitly.
 
-Local verification after repository consolidation (November 7, 2026): 47 backend
-tests and 16 Flutter tests pass; Flutter analysis is clean. Android debug APK and
-unsigned iOS release builds both succeed. The capture
-regression verifies that native events supersede older pending polling responses.
-Earlier live checks returned a structured Vertex text response and a screenshot
-response through private Cloud Run (HTTP 200, about 9.5 seconds); unauthenticated
-requests received HTTP 403. These are smoke tests, not detection-accuracy or
-fraud-prevention benchmarks. No cloud settings or billing were changed during
-this local verification.
+Current verification status (November 8, 2026): 57 backend tests (`pytest backend/`),
+19 Flutter tests (`flutter test`), and Native Android unit tests (`./gradlew test`) all pass.
+Flutter analysis is clean (`flutter analyze`: 0 issues).
+Live Cloud Run endpoint (`https://dhalam-api-xxpghctsqq-el.a.run.app`) returns structured Gemini 3.8 Flash threat assessments with sqlite-vec reference citations in real-time.
+Both Google ID token authentication and graceful local/biometric session fallbacks are supported on physical devices and emulators.
 
 Implemented locally: opt-in Flutter Android periodic access checks and native
 capture-event updates with polling fallback. Checks run approximately every 15

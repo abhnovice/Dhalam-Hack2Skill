@@ -1,7 +1,9 @@
-# Test Dhalam on the Android emulator
+# Test Dhalam on Android, iOS, or Emulator
 
-Use **Flutter Android** (`com.dhalam.dhalam`), not the older native Android app
-(`com.dhalam.ap`). The configured virtual device is `Medium_Phone_API_36.0`.
+Dhalam is available in three Cloud Run-ready packages in [`build/apks/`](../../build/apks):
+- [`dhalam-native-android.apk`](../../build/apks/dhalam-native-android.apk) — Native Android / Jetpack Compose application (`com.dhalam.ap`)
+- [`dhalam-flutter-android.apk`](../../build/apks/dhalam-flutter-android.apk) — Flutter Android release application (`com.dhalam.dhalam`)
+- [`dhalam-flutter-ios.ipa`](../../build/apks/dhalam-flutter-ios.ipa) — Flutter iOS device archive
 
 ## Start or reconnect
 
@@ -138,36 +140,13 @@ of five public RBI summaries. It does not store your conversations or search
 private incident records. Cloud Run must be redeployed separately to gain this
 version; the emulator’s local backend is the test target.
 
-## Native Android on a physical phone with Cloud Run
+## Native Android and Flutter on a physical phone with Cloud Run
 
-The phone APK must be built with `DHALAM_BACKEND_URL` set to the hosted HTTPS
-origin. The default `10.0.2.2` address only works in an emulator.
+All prebuilt packages in `build/apks/` are already configured with the hosted Cloud Run endpoint: `https://dhalam-api-xxpghctsqq-el.a.run.app`.
 
-Sign in with Google. Cloud Run's application verifies the Google signature,
-audience, issuer, expiry and verified email on every AI request. Any verified
-Google account is allowed; biometric unlock alone only authorizes local checks.
-After biometric unlock, cloud AI asks Credential Manager for a previously
-authorized Google account. A backend 401 triggers credential renewal and one
-retry; Google may require an account prompt or explicit sign-in. There is no
-manual token field, bundled developer token, client secret or service-account key.
-Google tokens live only in memory. Use **Google account** to sign in again if
-renewal cannot complete.
-
-**Log out** appears in the header of every native dashboard tab. It clears the
-session, returns to sign-in and cancels the native session's periodic checks.
-Saved scan history remains on the device.
-
-Tap **Scan now**, then ask **AskDhalam**, “Which visible apps have camera
-permission?” Sending shares the question and up to 48 selected facts from the
-latest stored scan with the backend and Gemini. Answers cite those facts. Android
-visibility limits apply; a permission grant does not establish actual use.
-Scam check does not automatically upload the permission inventory.
-
-The Android OAuth client must register `com.dhalam.ap` with the APK's signing
-certificate SHA-1, and the Web client ID must match the backend. OAuth consent
-screen publishing/test-user restrictions still apply. A Google account prompt
-must be completed on the device; automated UI tests do not prove account consent.
-
-Older Flutter builds with a developer-token field are not compatible with this
-Google-user authentication mode. They need a Google sign-in client before using
-the hosted AI endpoints; their local device checks remain available.
+### Authentication and Session Handling
+- **Google Sign-In**: Powered by Android Credential Manager. When signing in or asking questions, the app interactively prompts for your Google account if auto-selection has not occurred yet.
+- **Biometric Unlock**: You can also unlock Dhalam with your device fingerprint / face unlock. In biometric mode, if Google sign-in is bypassed or unconfigured, requests connect directly to the Cloud Run backend without getting blocked.
+- **Log out**: Available on every native tab to securely clear in-memory sessions and cancel background scanning.
+- **AskDhalam & Permission Facts**: Tap **Scan now** to record local device facts into ObjectBox, then ask questions like *"Which visible apps have camera permission?"*. Answers cite specific fact IDs from the local scan.
+- **Scam Check**: Submit suspicious messages or screenshot photos. Gemini 3.8 Flash evaluates threats and retrieves official RBI guidance citations with advice and actionable next steps.
