@@ -267,15 +267,37 @@ class MainActivity : FragmentActivity() {
                 .setAutoSelectEnabled(true)
                 .build()
             val response = credentialManager.getCredential(
-                context = this,
+                context = this@MainActivity,
                 request = GetCredentialRequest.Builder().addCredentialOption(option).build()
             )
             val credential = response.credential as? CustomCredential
-            if (credential?.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) throw AskSignInRequiredException()
-            val google = GoogleIdTokenCredential.createFrom(credential.data)
-            return google.idToken to (google.displayName ?: google.id)
-        } catch (cancel: CancellationException) { throw cancel }
-        catch (_: GetCredentialException) { throw AskSignInRequiredException() }
+            if (credential?.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val google = GoogleIdTokenCredential.createFrom(credential.data)
+                return google.idToken to (google.displayName ?: google.id)
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            // Auto-select not available; try interactive sign in
+        }
+
+        try {
+            val interactiveOption = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID).build()
+            val response = credentialManager.getCredential(
+                context = this@MainActivity,
+                request = GetCredentialRequest.Builder().addCredentialOption(interactiveOption).build()
+            )
+            val credential = response.credential as? CustomCredential
+            if (credential?.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val google = GoogleIdTokenCredential.createFrom(credential.data)
+                return google.idToken to (google.displayName ?: google.id)
+            }
+            throw AskSignInRequiredException()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            throw AskSignInRequiredException()
+        }
     }
 
     private fun signOutGoogle() {

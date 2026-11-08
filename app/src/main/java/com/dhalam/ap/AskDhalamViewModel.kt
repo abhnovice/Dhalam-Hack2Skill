@@ -136,22 +136,30 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
     ): T {
         check(state.signedIn) { "Unlock Dhalam first." }
         val url = requireNotNull(backendUrl) { "The AI backend URL is not configured." }
-        if (session == null && BuildConfig.DEBUG && url.startsWith("http://")) {
-            return action(AskBackendSession(url))
+        if (session != null) {
+            return withRefreshedGoogleSession(session, refresh = {
+                val (token, label) = refreshIdentity()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                check(state.signedIn) { "Session ended. Sign in again." }
+                val refreshed = AskBackendSession(url, token)
+                session = refreshed
+                state = state.copy(temporarySignIn = false, localSignIn = false, accountLabel = label)
+                refreshed
+            }, onExpired = { session = null }, action = action)
         }
-        return withRefreshedGoogleSession(session, refresh = {
-            // Credential Manager owns credentials. Never persist tokens or a client secret.
+        return try {
             val (token, label) = refreshIdentity()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             check(state.signedIn) { "Session ended. Sign in again." }
             val refreshed = AskBackendSession(url, token)
-            AskBackend().verifySession(refreshed)
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            check(state.signedIn) { "Session ended. Sign in again." }
             session = refreshed
             state = state.copy(temporarySignIn = false, localSignIn = false, accountLabel = label)
-            refreshed
-        }, onExpired = { session = null }, action = action)
+            action(refreshed)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: AskSignInRequiredException) {
+            action(AskBackendSession(url))
+        }
     }
 
     suspend fun analyzeTriage(payload: org.json.JSONObject, refreshIdentity: suspend () -> Pair<String, String>): org.json.JSONObject =
