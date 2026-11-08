@@ -18,6 +18,61 @@ void main() {
   });
   tearDown(() => messenger.setMockMethodCallHandler(toolsChannel, null));
 
+  testWidgets('finding counts filter results and keep unavailable separate', (
+    tester,
+  ) async {
+    final journal = SecurityJournal();
+    journal.records = [
+      CheckRecord(1, [
+        explain('Device lock', 'Not configured'),
+        explain('Biometric authentication', 'Unavailable'),
+      ]),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(home: SecurityToolsScreen(journal: journal, ios: true)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Needs attention · 1'), findsOneWidget);
+    expect(find.text('Unavailable · 1'), findsOneWidget);
+    await tester.tap(find.text('Unavailable · 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Device lock · Needs attention'), findsNothing);
+    expect(find.text('Biometric authentication · Unavailable'), findsOneWidget);
+    await tester.tap(find.text('Configured · 0'));
+    await tester.pumpAndSettle();
+    expect(find.text('No recorded findings in this category.'), findsOneWidget);
+    await tester.tap(find.text('Show all findings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Device lock · Needs attention'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('editing an inspected link clears its previous hostname', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SecurityToolsScreen(journal: SecurityJournal(), ios: false),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Link inspector'));
+    await tester.tap(find.text('Link inspector'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://trusted.example@evil.example/login',
+    );
+    await tester.tap(find.text('Inspect link'));
+    await tester.pumpAndSettle();
+    expect(find.text('evil.example'), findsOneWidget);
+    expect(find.text('Path: /login'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'https://different.example');
+    await tester.pumpAndSettle();
+    expect(find.text('evil.example'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'capture warning is visible on tools and report requires preview',
     (tester) async {

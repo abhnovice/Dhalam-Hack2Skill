@@ -48,10 +48,11 @@ data class SecurityJournalData(val records: List<SecurityCheckRecord> = emptyLis
     fun json(): String = JSONObject().put("version", 1).put("records", JSONArray(records.map { it.json() }))
         .put("reviewed", JSONObject(reviewed)).toString()
     fun lastSuccess(title: String) = records.firstOrNull { r -> r.findings.any { it.title == title && it.state != "Unavailable" } }?.at
-    fun changes(): List<String> {
-        if (records.size < 2) return listOf("Run another check to compare observations.")
-        val before = records[1].findings.associateBy { it.title }
-        return records.first().findings.mapNotNull { current ->
+    fun changes(index: Int = 0): List<String> {
+        if (index !in records.indices) return emptyList()
+        if (index + 1 >= records.size) return listOf("Run another check to compare observations.")
+        val before = records[index + 1].findings.associateBy { it.title }
+        return records[index].findings.mapNotNull { current ->
             val old = before[current.title]
             when {
                 old == null -> "${current.title}: first observation."

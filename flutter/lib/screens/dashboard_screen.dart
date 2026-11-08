@@ -383,20 +383,37 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                   ]),
                   _section('App permissions', [
-                    TextField(
-                      onChanged: (value) =>
-                          setState(() => _search = value.toLowerCase()),
-                      decoration: const InputDecoration(
-                        labelText: 'Search apps, package IDs or permissions',
-                        prefixIcon: Icon(Icons.search),
+                    if (ios) ...[
+                      const ListTile(
+                        leading: Icon(Icons.checklist),
+                        title: Text('Review permissions on your iPhone'),
+                        subtitle: Text(
+                          '1. Open Settings → Privacy & Security.\n2. Choose a permission such as Camera.\n3. Review apps and remove access you no longer need.',
+                        ),
                       ),
-                    ),
-                    FilterChip(
-                      label: const Text('Sensitive permissions'),
-                      selected: _sensitiveOnly,
-                      onSelected: (value) =>
-                          setState(() => _sensitiveOnly = value),
-                    ),
+                      TextButton(
+                        onPressed: _openTools,
+                        child: const Text(
+                          'Open manual privacy review in Security tools',
+                        ),
+                      ),
+                    ],
+                    if (!ios)
+                      TextField(
+                        onChanged: (value) =>
+                            setState(() => _search = value.toLowerCase()),
+                        decoration: const InputDecoration(
+                          labelText: 'Search apps, package IDs or permissions',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                      ),
+                    if (!ios)
+                      FilterChip(
+                        label: const Text('Sensitive permissions'),
+                        selected: _sensitiveOnly,
+                        onSelected: (value) =>
+                            setState(() => _sensitiveOnly = value),
+                      ),
                     const Text(
                       'Sensitive access includes SMS, contacts, microphone, camera, location and overlays. A grant is not proof of misuse.',
                     ),
@@ -427,7 +444,30 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ))
                         ExpansionTile(
                           title: Text(permission.name),
-                          subtitle: Text('${permission.grantedCount} granted'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${permission.apps.where((a) => a.granted == true).map((a) => a.packageName).toSet().length} visible apps with permission',
+                              ),
+                              LinearProgressIndicator(
+                                value: permission.apps.isEmpty
+                                    ? 0
+                                    : permission.apps
+                                              .where((a) => a.granted == true)
+                                              .map((a) => a.packageName)
+                                              .toSet()
+                                              .length /
+                                          permission.apps
+                                              .map((a) => a.packageName)
+                                              .toSet()
+                                              .length,
+                                semanticsLabel:
+                                    'Fraction of listed apps with this permission granted; not actual use',
+                              ),
+                              const Text('Granted access, not actual use'),
+                            ],
+                          ),
                           children: [
                             for (final app in permission.apps.where(
                               (a) =>

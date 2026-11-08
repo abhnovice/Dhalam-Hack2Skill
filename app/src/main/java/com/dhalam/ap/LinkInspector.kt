@@ -4,7 +4,7 @@ import java.net.URI
 import java.net.IDN
 import java.util.Locale
 
-data class LinkInspection(val host: String, val notes: List<String>)
+data class LinkInspection(val host: String, val notes: List<String>, val scheme: String = "", val path: String = "")
 
 /** Local structural inspection only. Never resolves, fetches or launches the URL. */
 fun inspectSecurityLink(input: String): LinkInspection {
@@ -39,6 +39,6 @@ fun inspectSecurityLink(input: String): LinkInspection {
         if (uri.port != -1 && uri.port !in listOf(80, 443)) notes.add("Uses an unusual port: ${uri.port}.")
         if (notes.isEmpty()) notes.add("No listed structural indicators found. This does not establish that the link is safe.")
         notes.add("No website was opened or fetched. Redirects, reputation and page content were not checked. HTTPS alone does not mean trustworthy.")
-        return LinkInspection(destination, notes)
+        return LinkInspection(destination, notes, uri.scheme.lowercase(Locale.ROOT), uri.rawPath.orEmpty().ifEmpty { "/" })
     } catch (_: Exception) { return LinkInspection("", listOf("Only a valid HTTP or HTTPS URL can be inspected.")) }
 }

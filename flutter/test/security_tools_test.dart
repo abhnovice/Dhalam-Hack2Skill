@@ -113,6 +113,8 @@ void main() {
   test('link inspector exposes userinfo trick and the actual destination', () {
     final result = inspectLink('https://trusted.example@evil.example/login');
     expect(result.host, 'evil.example');
+    expect(result.scheme, 'https');
+    expect(result.path, '/login');
     expect(result.notes.any((n) => n.contains('before @')), true);
     expect(
       inspectLink(
@@ -174,6 +176,26 @@ void main() {
     expect(restored.changes.any((c) => c.contains('reader.one')), true);
     expect(restored.changes.any((c) => c.contains('reader.two')), true);
   });
+
+  test(
+    'timeline compares the selected adjacent pair, preserving unknown reads',
+    () {
+      final journal = SecurityJournal();
+      journal.records = [
+        CheckRecord(3, [explain('Device lock', 'Unavailable')]),
+        CheckRecord(2, [explain('Device lock', 'Configured')]),
+        CheckRecord(1, [explain('Device lock', 'Not configured')]),
+      ];
+      expect(journal.changesAt(0).single, contains('comparison unavailable'));
+      expect(
+        journal.changesAt(1).single,
+        contains('Not configured → Configured'),
+      );
+      expect(journal.changesAt(2).single, contains('Run another check'));
+      expect(journal.changesAt(-1), isEmpty);
+      expect(journal.changesAt(3), isEmpty);
+    },
+  );
 
   test('invalid and ambiguous links are rejected', () {
     for (final input in [

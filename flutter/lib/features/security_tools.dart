@@ -256,13 +256,16 @@ class SecurityJournal extends ChangeNotifier {
     return null;
   }
 
-  List<String> get changes {
-    if (records.length < 2) {
+  List<String> get changes => changesAt(0);
+
+  List<String> changesAt(int index) {
+    if (index < 0 || index >= records.length) return [];
+    if (index + 1 >= records.length) {
       return ['Run another check to compare observations.'];
     }
-    final before = {for (final f in records[1].findings) f.title: f};
+    final before = {for (final f in records[index + 1].findings) f.title: f};
     final changes = <String>[];
-    for (final f in records.first.findings) {
+    for (final f in records[index].findings) {
       final old = before[f.title];
       if (old == null) {
         changes.add('${f.title}: first observation.');
@@ -276,8 +279,8 @@ class SecurityJournal extends ChangeNotifier {
         changes.add('${f.title}: ${old.detail} → ${f.detail}');
       }
     }
-    final currentAccess = records.first.access,
-        previousAccess = records[1].access;
+    final currentAccess = records[index].access,
+        previousAccess = records[index + 1].access;
     if (currentAccess != null && previousAccess != null) {
       for (final group in ['service:', 'permission:']) {
         final coverage = group == 'service:'
@@ -359,7 +362,8 @@ Map<String, String> reviewSteps(bool ios) => {
 class LinkInspection {
   final String host;
   final List<String> notes;
-  LinkInspection(this.host, this.notes);
+  final String scheme, path;
+  LinkInspection(this.host, this.notes, {this.scheme = '', this.path = ''});
 }
 
 LinkInspection inspectLink(String input) {
@@ -448,5 +452,10 @@ LinkInspection inspectLink(String input) {
   notes.add(
     'No website was opened or fetched. Redirects, reputation and page content were not checked. HTTPS alone does not mean trustworthy.',
   );
-  return LinkInspection(host, notes);
+  return LinkInspection(
+    host,
+    notes,
+    scheme: uri.scheme,
+    path: uri.path.isEmpty ? '/' : uri.path,
+  );
 }

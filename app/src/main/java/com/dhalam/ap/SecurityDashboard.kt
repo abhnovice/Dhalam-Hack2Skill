@@ -1,5 +1,7 @@
 package com.dhalam.ap
 
+import androidx.compose.material3.LinearProgressIndicator
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
@@ -378,9 +380,12 @@ fun SecurityDashboard(
                                 }
 
                                 if (inventory != null) {
+                                    if (search.isEmpty()) items(inventory.permissions, key = { "overview:${it.name}" }) {
+                                        PermissionRow(it, "")
+                                    }
                                     when {
                                         search.isEmpty() -> item("search_hint") {
-                                            Caption("Search by app name, package name, or permission.")
+                                            Caption("Search by app name, package name, or permission. Grants describe access, not actual use.")
                                         }
                                         matches.isEmpty() -> item("no_matches") {
                                             Caption("No matching apps or permissions.")
@@ -480,6 +485,10 @@ private fun PermissionRow(report: PermissionReport, search: String) {
             }
         }
 
+        val distinctApps = report.apps.distinctBy { it.packageName }
+        val grantedApps = report.apps.filter { it.granted == true }.distinctBy { it.packageName }.size
+        Caption("$grantedApps visible apps with permission · granted access, not actual use")
+        LinearProgressIndicator(progress = { if (distinctApps.isEmpty()) 0f else grantedApps.toFloat() / distinctApps.size }, modifier = Modifier.fillMaxWidth())
         if (expanded) {
             Caption(report.name)
             visibleApps.forEach { app ->

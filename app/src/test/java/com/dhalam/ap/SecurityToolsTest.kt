@@ -39,6 +39,8 @@ class SecurityToolsTest {
     @Test fun linksExposeTheDestinationWithoutOpeningIt() {
         val result = inspectSecurityLink("https://trusted.example@evil.example/login")
         assertEquals("evil.example", result.host)
+        assertEquals("https", result.scheme)
+        assertEquals("/login", result.path)
         assertTrue(result.notes.any { "before @" in it })
         assertTrue(inspectSecurityLink("https://login.bank.example.evil.test").notes.any { "Many domain labels" in it })
         assertTrue(inspectSecurityLink("https://аррӏе.com").notes.any { "Internationalized" in it })
@@ -46,6 +48,19 @@ class SecurityToolsTest {
         assertTrue(inspectSecurityLink("http://127.0.0.1:8080").notes.any { "unusual port" in it })
         assertTrue(inspectSecurityLink("https://example.com").notes.any { "does not establish" in it })
     }
+    @Test fun timelineComparesSelectedAdjacentReadings() {
+        val journal = SecurityJournalData(listOf(
+            SecurityCheckRecord(3, listOf(explainSecurity("Device lock", "Unavailable"))),
+            SecurityCheckRecord(2, listOf(explainSecurity("Device lock", "Configured"))),
+            SecurityCheckRecord(1, listOf(explainSecurity("Device lock", "Not configured")))
+        ))
+        assertTrue(journal.changes(0).single().contains("comparison unavailable"))
+        assertTrue(journal.changes(1).single().contains("Not configured → Configured"))
+        assertTrue(journal.changes(2).single().contains("Run another check"))
+        assertTrue(journal.changes(-1).isEmpty())
+        assertTrue(journal.changes(3).isEmpty())
+    }
+
     @Test fun invalidLinksAreRejected() {
         listOf("", "javascript://alert", "https://a b.com", "https://a\\b.com", "http://", "https://example.com:abc", "https://example.com:99999", "https://bad_host.com").forEach {
             assertEquals(it, "", inspectSecurityLink(it).host)

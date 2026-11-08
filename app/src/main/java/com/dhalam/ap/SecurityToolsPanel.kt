@@ -32,6 +32,7 @@ fun SecurityToolsPanel(observedAt: Long?) {
     var inspection by remember { mutableStateOf<LinkInspection?>(null) }
     var preview by remember { mutableStateOf<String?>(null) }
     var clearPrompt by remember { mutableStateOf(false) }
+    var findingFilter by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(observedAt) {
@@ -75,7 +76,20 @@ fun SecurityToolsPanel(observedAt: Long?) {
             "Findings" -> {
                 Text("Latest recorded findings. Run a new scan after changing settings.")
                 if (journal.records.isEmpty()) Text("No checks recorded yet.")
-                journal.records.firstOrNull()?.findings?.forEach { finding ->
+                journal.records.firstOrNull()?.let { record ->
+                    Text("Observed at ${securityStamp(record.at)}")
+                    // A vertical layout preserves labels at large font sizes.
+                    (listOf("Needs attention", "Configured", "Manual review", "Unavailable") + record.findings.map { it.state }).distinct().forEach { state ->
+                        FilterChip(selected = findingFilter == state,
+                            onClick = { findingFilter = if (findingFilter == state) null else state },
+                            label = { Text("$state · ${record.findings.count { it.state == state }}") },
+                            leadingIcon = { Text(when (state) { "Needs attention" -> "!"; "Configured" -> "✓"; "Unavailable" -> "?"; else -> "☷" }) },
+                            modifier = Modifier.fillMaxWidth())
+                    }
+                    if (findingFilter != null) TextButton(onClick = { findingFilter = null }) { Text("Show all findings") }
+                    if (findingFilter != null && record.findings.none { it.state == findingFilter }) Text("No recorded findings in this category.")
+                }
+                journal.records.firstOrNull()?.findings?.filter { findingFilter == null || it.state == findingFilter }?.forEach { finding ->
                     Card { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${finding.title} · ${finding.state}", style = MaterialTheme.typography.titleMedium)
                         Text(finding.detail)
@@ -86,11 +100,20 @@ fun SecurityToolsPanel(observedAt: Long?) {
             }
             "History" -> {
                 Text("Changes since previous check", style = MaterialTheme.typography.titleMedium)
-                journal.changes().forEach { Text(it) }
+                Text("Times show when a change was observed, not when it happened.")
+                if (journal.records.isEmpty()) Text("No checks recorded yet.")
                 Text("Last 30 successful foreground checks, stored locally. Inventory history contains counts, not individual app or permission changes. Times are UTC. Background checks continue separately.")
-                journal.records.forEach { record ->
-                    TextButton(onClick = { expanded = if (expanded == record.at) null else record.at }) { Text(securityStamp(record.at)) }
-                    if (expanded == record.at) record.findings.forEach { Text("${it.title} [${it.state}]: ${it.detail}") }
+                journal.records.forEachIndexed { index, record ->
+                    Card { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("● Observed at ${securityStamp(record.at)}", style = MaterialTheme.typography.titleMedium)
+                        Text(if (index == journal.records.lastIndex) "First retained observation" else journal.changes(index).first())
+                        TextButton(onClick = { expanded = if (expanded == record.at) null else record.at }) { Text(if (expanded == record.at) "Hide details" else "View changes and readings") }
+                        if (expanded == record.at) {
+                            if (index < journal.records.lastIndex) journal.changes(index).forEach { Text("↔ $it") }
+                            HorizontalDivider()
+                            record.findings.forEach { Text("${it.title} [${it.state}]: ${it.detail}") }
+                        }
+                    } }
                 }
                 TextButton(enabled = !busy, onClick = { clearPrompt = true }) { Text("Clear local history and reviews") }
             }
@@ -115,11 +138,20 @@ fun SecurityToolsPanel(observedAt: Long?) {
             }
             "Link inspector" -> {
                 Text("Inspect a pasted link locally. It will not be opened, fetched, stored in history or included in reports.")
-                OutlinedTextField(value = url, onValueChange = { if (it.length <= 4096) url = it }, label = { Text("URL to inspect") },
+                OutlinedTextField(value = url, onValueChange = { if (it.length <= 4096) { url = it; inspection = null } }, label = { Text("URL to inspect") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth())
                 Button(onClick = { inspection = inspectSecurityLink(url) }) { Text("Inspect link") }
                 inspection?.let { result ->
-                    SelectionContainer { Text("Actual hostname: ${result.host.ifEmpty { "Unavailable — invalid input" }}") }
+                    Card { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Actual hostname", style = MaterialTheme.typography.labelLarge)
+                        SelectionContainer { Text(result.host.ifEmpty { "Unavailable — invalid input" }, style = MaterialTheme.typography.titleLarge) }
+                        if (result.host.isNotEmpty()) {
+                            HorizontalDivider()
+                            Text("Scheme: ${result.scheme} · transport only, not trust")
+                            SelectionContainer { Text("Path: ${result.path}") }
+                        }
+                        Text("Inspected locally; link not opened.")
+                    } }
                     result.notes.forEach { Text(it) }
                 }
             }

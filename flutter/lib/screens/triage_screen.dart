@@ -561,6 +561,33 @@ class _TriageScreenState extends State<TriageScreen> {
                 ],
               ),
             ],
+            if ((result['coercion_markers'] as List? ?? []).isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Warning signs',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              for (final marker in (result['coercion_markers'] as List).take(3))
+                Card(
+                  child: ListTile(
+                    leading: Icon(Icons.warning_amber_rounded, color: color),
+                    title: Text(marker.toString()),
+                  ),
+                ),
+            ],
+            if ((result['evidence_extracted'] as List? ?? []).isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('What you shared'),
+                children: [
+                  for (final evidence
+                      in (result['evidence_extracted'] as List).take(3))
+                    ListTile(
+                      leading: const Icon(Icons.format_quote),
+                      title: Text(evidence.toString()),
+                    ),
+                ],
+              ),
             const SizedBox(height: 12),
             Text(
               low

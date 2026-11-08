@@ -54,6 +54,7 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
   LinkInspection? _inspection;
   String? _report;
   bool _busy = false;
+  String? _findingFilter;
   @override
   void dispose() {
     _timer?.cancel();
@@ -131,8 +132,63 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                         ),
                         if (j.records.isEmpty)
                           const Text('No checks recorded yet.'),
+                        if (j.records.isNotEmpty) ...[
+                          Text('Observed at ${stamp(j.records.first.at)}'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final state in {
+                                'Needs attention',
+                                'Configured',
+                                'Manual review',
+                                'Unavailable',
+                                ...j.records.first.findings.map((f) => f.state),
+                              })
+                                FilterChip(
+                                  avatar: Icon(
+                                    state == 'Needs attention'
+                                        ? Icons.warning_amber
+                                        : state == 'Configured'
+                                        ? Icons.check_circle_outline
+                                        : state == 'Unavailable'
+                                        ? Icons.help_outline
+                                        : Icons.checklist,
+                                    size: 20,
+                                  ),
+                                  label: Text(
+                                    '$state · ${j.records.first.findings.where((f) => f.state == state).length}',
+                                  ),
+                                  selected: _findingFilter == state,
+                                  onSelected: (selected) => setState(
+                                    () => _findingFilter = selected
+                                        ? state
+                                        : null,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (_findingFilter != null)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _findingFilter = null),
+                              child: const Text('Show all findings'),
+                            ),
+                          if (_findingFilter != null &&
+                              !j.records.first.findings.any(
+                                (f) => f.state == _findingFilter,
+                              ))
+                            const Text(
+                              'No recorded findings in this category.',
+                            ),
+                        ],
                         for (final f
-                            in j.records.firstOrNull?.findings ?? <Finding>[])
+                            in (j.records.firstOrNull?.findings ?? <Finding>[])
+                                .where(
+                                  (f) =>
+                                      _findingFilter == null ||
+                                      f.state == _findingFilter,
+                                ))
                           Card(
                             child: Padding(
                               padding: const EdgeInsets.all(16),
@@ -161,20 +217,40 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                           'Changes since previous check',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        for (final c in j.changes) ListTile(title: Text(c)),
+                        const Text(
+                          'Times show when a change was observed, not when it happened.',
+                        ),
                         const Text(
                           'Last 30 successful foreground checks, stored locally. New checks retain service IDs and permission states. Missing apps may reflect visibility changes, not removal. Times are UTC.',
                         ),
-                        for (final r in j.records)
-                          ExpansionTile(
-                            title: Text(stamp(r.at)),
-                            children: [
-                              for (final f in r.findings)
-                                ListTile(
-                                  title: Text('${f.title} · ${f.state}'),
-                                  subtitle: Text(f.detail),
-                                ),
-                            ],
+                        if (j.records.isEmpty)
+                          const Text('No checks recorded yet.'),
+                        for (var index = 0; index < j.records.length; index++)
+                          Card(
+                            child: ExpansionTile(
+                              leading: const Icon(Icons.history),
+                              title: Text(
+                                'Observed at ${stamp(j.records[index].at)}',
+                              ),
+                              subtitle: Text(
+                                index == j.records.length - 1
+                                    ? 'First retained observation'
+                                    : j.changesAt(index).first,
+                              ),
+                              children: [
+                                if (index < j.records.length - 1)
+                                  for (final change in j.changesAt(index))
+                                    ListTile(
+                                      leading: const Icon(Icons.compare_arrows),
+                                      title: Text(change),
+                                    ),
+                                for (final f in j.records[index].findings)
+                                  ListTile(
+                                    title: Text('${f.title} · ${f.state}'),
+                                    subtitle: Text(f.detail),
+                                  ),
+                              ],
+                            ),
                           ),
                         TextButton(
                           onPressed: _busy
@@ -252,6 +328,7 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                         ),
                         TextField(
                           controller: _url,
+                          onChanged: (_) => setState(() => _inspection = null),
                           maxLength: 4096,
                           autocorrect: false,
                           enableSuggestions: false,
@@ -279,9 +356,38 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                         ),
                         if (_inspection != null) ...[
                           const SizedBox(height: 12),
-                          SelectableText(
-                            'Actual hostname: ${_inspection!.host.isEmpty ? 'Unavailable — invalid input' : _inspection!.host}',
-                            textDirection: TextDirection.ltr,
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Actual hostname'),
+                                  SelectableText(
+                                    _inspection!.host.isEmpty
+                                        ? 'Unavailable — invalid input'
+                                        : _inspection!.host,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                    textDirection: TextDirection.ltr,
+                                  ),
+                                  if (_inspection!.host.isNotEmpty) ...[
+                                    const Divider(),
+                                    Text(
+                                      'Scheme: ${_inspection!.scheme} · transport only, not trust',
+                                    ),
+                                    SelectableText(
+                                      'Path: ${_inspection!.path}',
+                                      textDirection: TextDirection.ltr,
+                                    ),
+                                  ],
+                                  const Text(
+                                    'Inspected locally; link not opened.',
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                           for (final note in _inspection!.notes)
                             ListTile(

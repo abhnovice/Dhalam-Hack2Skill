@@ -318,6 +318,24 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
                             assessment.optJSONArray("recommended_actions")?.optString(0)?.takeIf { it.isNotBlank() }?.let {
                                 Text("→ $it", style = MaterialTheme.typography.titleMedium)
                             }
+                            assessment.optJSONArray("coercion_markers")?.let { markers ->
+                                if (markers.length() > 0) Text("Warning signs", style = MaterialTheme.typography.titleMedium)
+                                for (index in 0 until minOf(3, markers.length())) {
+                                    Card { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Text("!", color = accent, style = MaterialTheme.typography.titleMedium)
+                                        Text(markers.optString(index), Modifier.weight(1f))
+                                    } }
+                                }
+                            }
+                            var evidenceOpen by remember { mutableStateOf(false) }
+                            assessment.optJSONArray("evidence_extracted")?.let { evidence ->
+                                if (evidence.length() > 0) TextButton(onClick = { evidenceOpen = !evidenceOpen }) {
+                                    Text(if (evidenceOpen) "Hide what you shared" else "What you shared")
+                                }
+                                if (evidenceOpen) for (index in 0 until minOf(3, evidence.length())) {
+                                    Text("“${evidence.optString(index)}”", style = MaterialTheme.typography.bodyLarge)
+                                }
+                            }
                             Text(if (low) "This does not prove it is safe." else "AI can be wrong. Check independently.", color = colors.onSurfaceVariant)
                             TextButton(onClick = { details = turn }) { Text("Why? Show details") }
                         }
