@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +50,8 @@ internal fun triageOrigin(value: String, debug: Boolean): String {
     return value.trim().trimEnd('/')
 }
 
-private suspend fun submitTriage(origin: String, token: String, payload: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+internal suspend fun submitTriage(origin: String, token: String, payload: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    require(token.isBlank() || origin.startsWith("https://")) { "Cloud tokens require HTTPS." }
     val connection = URL("${triageOrigin(origin, BuildConfig.DEBUG)}/api/v1/analyze-threat").openConnection() as HttpURLConnection
     try {
         connection.requestMethod = "POST"
@@ -64,9 +64,10 @@ private suspend fun submitTriage(origin: String, token: String, payload: JSONObj
         val body = payload.toString().toByteArray(Charsets.UTF_8)
         connection.setFixedLengthStreamingMode(body.size)
         connection.outputStream.use { it.write(body) }
+        if (connection.responseCode == 401) throw AskSignInRequiredException()
         check(connection.responseCode == 200) {
             when (connection.responseCode) {
-                401, 403 -> "Backend access denied or expired. Check the demo connection and token."
+                403 -> "This Google account is not authorized. Sign in with an allowed, verified account."
                 413, 422 -> "Review consent and use a valid message, HTTP(S) URL or image under 4 MiB."
                 504 -> "Analysis timed out. Try again later; local checks still work."
                 else -> "Cloud analysis is unavailable. Please try again later."
@@ -122,15 +123,29 @@ internal fun triageHeadline(level: String): String = when (level) {
     else -> "Pause. Let’s check first."
 }
 
+internal fun connectionFailureMessage(origin: String, failure: Exception): String {
+    val host = runCatching { URI(origin.trim()).host }.getOrNull()
+    return when {
+        failure is IllegalArgumentException -> "The app’s backend URL is invalid. Install the latest configured build."
+        host == "10.0.2.2" -> "This address works only in an Android emulator. On a phone, install the build configured for the hosted backend."
+        host in setOf("127.0.0.1", "localhost") -> "Cannot reach the local backend. Connect this phone by USB and set up adb reverse, or use your hosted HTTPS backend configured in this build."
+        failure is java.net.SocketTimeoutException -> "The backend took too long to respond. Try again; local device checks still work."
+        failure is javax.net.ssl.SSLException -> "Could not establish a secure connection. Check the backend URL and your phone’s date and time."
+        else -> "Cannot reach the backend. Check your internet connection and the HTTPS URL configured in this build."
+    }
+}
+
 @Composable
-fun ScamTriagePanel(modifier: Modifier = Modifier) {
+fun ScamTriagePanel(
+    modifier: Modifier = Modifier,
+    analyze: suspend (JSONObject) -> JSONObject = { submitTriage(BuildConfig.ASK_BACKEND_URL, "", it) },
+    onSignIn: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val colors = MaterialTheme.colorScheme
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
     var message by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf(BuildConfig.ASK_BACKEND_URL) }
-    var token by remember { mutableStateOf("") }
     var image by remember { mutableStateOf<ByteArray?>(null) }
     var mime by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -138,7 +153,6 @@ fun ScamTriagePanel(modifier: Modifier = Modifier) {
     var turns by remember { mutableStateOf<List<TriageTurn>>(emptyList()) }
     var details by remember { mutableStateOf<TriageTurn?>(null) }
     var preview by remember { mutableStateOf<String?>(null) }
-    var connectionOpen by remember { mutableStateOf(false) }
     var consentOpen by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -179,12 +193,13 @@ fun ScamTriagePanel(modifier: Modifier = Modifier) {
         busy = true; error = null
         scope.launch {
             try {
-                val answer = submitTriage(endpoint, token, payload)
+                val answer = analyze(payload)
                 turns = turns + TriageTurn(text, combined, link, hadImage, answer)
                 message = ""; image = null; mime = null
             } catch (cancel: CancellationException) { throw cancel }
+            catch (_: AskSignInRequiredException) { error = "Please sign in with Google again to continue." }
             catch (failure: IllegalStateException) { error = failure.message ?: "Analysis unavailable." }
-            catch (_: Exception) { error = "I couldn’t connect. Try again in a moment. Pause before paying under pressure." }
+            catch (failure: Exception) { error = connectionFailureMessage(BuildConfig.ASK_BACKEND_URL, failure) }
             finally { busy = false }
         }
     }
@@ -196,12 +211,6 @@ fun ScamTriagePanel(modifier: Modifier = Modifier) {
         text = { Text("Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first. Device checks stay on your phone. Earlier photos are not sent again. Links may be checked with Safe Browsing. Google service retention policies apply; Dhalam does not save submissions on its server.") },
         confirmButton = { Button(onClick = { consentOpen = false; send() }) { Text("Send for check") } },
         dismissButton = { TextButton(onClick = { consentOpen = false }) { Text("Not now") } })
-    if (connectionOpen) AlertDialog(onDismissRequest = { connectionOpen = false }, title = { Text("Demo connection") },
-        text = { Column {
-            OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Backend URL") })
-            OutlinedTextField(token, { token = it }, label = { Text("Cloud Run token (empty for local)") }, visualTransformation = PasswordVisualTransformation())
-            Text("Session only. Never enter an API key.")
-        } }, confirmButton = { TextButton(onClick = { connectionOpen = false }) { Text("Done") } })
     details?.let { turn ->
         val assessment = turn.assessment
         AlertDialog(onDismissRequest = { details = null }, title = { Text("Why this advice?") },
@@ -271,7 +280,7 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { turns = emptyList(); message = ""; image = null; mime = null; error = null }, enabled = !busy) { Text("New chat") }
-            TextButton(onClick = { connectionOpen = true }, enabled = !busy) { Text("Connection") }
+            TextButton(onClick = onSignIn, enabled = !busy) { Text("Google account") }
         }
         androidx.compose.foundation.lazy.LazyColumn(state = scroll, modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {

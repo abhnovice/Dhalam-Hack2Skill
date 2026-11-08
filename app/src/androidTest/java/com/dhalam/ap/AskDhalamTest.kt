@@ -12,6 +12,19 @@ import org.junit.Test
 class AskDhalamTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun logoutIsAvailableOnTheDefaultScamTab() {
+        val signedIn = androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent {
+            AuthenticatedContent(AskUiState(signedIn = signedIn.value), {}) {
+                SecurityDashboard(null, false, null, false, {}, {}, {}, {},
+                    AskUiState(signedIn = true), {}, {}, {}, {}, { signedIn.value = false })
+            }
+        }
+        compose.onNodeWithText("Log out").performClick()
+        compose.onNodeWithText("Sign in with Google").assertIsDisplayed()
+        compose.onNodeWithText("Check").assertDoesNotExist()
+    }
+
     @Test fun scamChatRequiresExplicitConsentAndCanCancel() {
         compose.setContent { MaterialTheme { ScamTriagePanel(androidx.compose.ui.Modifier.fillMaxSize()) } }
         compose.onNodeWithText("Check").assertIsNotEnabled()

@@ -14,6 +14,7 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import android.content.ActivityNotFoundException
@@ -64,6 +65,7 @@ class MainActivity : FragmentActivity() {
     private val observation = mutableStateOf<SecurityObservation?>(null)
     private val scanning = mutableStateOf(false)
     private var scanJob: Job? = null
+    private var credentialJob: Job? = null
     private val scanError = mutableStateOf<String?>(null)
     private val notificationsEnabled = mutableStateOf(false)
 
@@ -130,7 +132,8 @@ class MainActivity : FragmentActivity() {
                 onAsk = ::sendAskQuestion,
                 onClearAsk = askViewModel::clear,
                 onSignIn = ::signInWithGoogle,
-                onSignOut = ::signOutGoogle
+                onSignOut = ::signOutGoogle,
+                onAnalyze = { payload -> askViewModel.analyzeTriage(payload, ::refreshGoogleIdentity) }
                 )
             }
         }
@@ -193,10 +196,10 @@ class MainActivity : FragmentActivity() {
             return
         }
         if (!askViewModel.state.signedIn) {
-            askViewModel.send(observation.value)
+            askViewModel.send(observation.value, ::refreshGoogleIdentity)
             return
         }
-        withLocalNetworkAccess { askViewModel.send(observation.value) }
+        withLocalNetworkAccess { askViewModel.send(observation.value, ::refreshGoogleIdentity) }
     }
 
     private fun signInWithBiometrics() {
@@ -229,7 +232,7 @@ class MainActivity : FragmentActivity() {
         }
         withLocalNetworkAccess {
             if (!askViewModel.beginGoogleSignIn()) return@withLocalNetworkAccess
-            lifecycleScope.launch {
+            credentialJob = lifecycleScope.launch {
                 try {
                     val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID).build()
                     val response = credentialManager.getCredential(
@@ -256,7 +259,30 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private suspend fun refreshGoogleIdentity(): Pair<String, String> {
+        try {
+            val option = GetGoogleIdOption.Builder()
+                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .setFilterByAuthorizedAccounts(true)
+                .setAutoSelectEnabled(true)
+                .build()
+            val response = credentialManager.getCredential(
+                context = this,
+                request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+            )
+            val credential = response.credential as? CustomCredential
+            if (credential?.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) throw AskSignInRequiredException()
+            val google = GoogleIdTokenCredential.createFrom(credential.data)
+            return google.idToken to (google.displayName ?: google.id)
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (_: GetCredentialException) { throw AskSignInRequiredException() }
+    }
+
     private fun signOutGoogle() {
+        credentialJob?.cancel()
+        credentialJob = null
+        pendingLocalAction = null
+        biometricPrompt.cancelAuthentication()
         askViewModel.signOut()
         lifecycleScope.launch {
             try { credentialManager.clearCredentialState(ClearCredentialStateRequest()) }

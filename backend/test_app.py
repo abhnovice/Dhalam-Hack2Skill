@@ -378,3 +378,51 @@ def test_grounding_only_attaches_server_owned_sources():
     result.source_ids = ['invented-police-record']
     with pytest.raises(ValueError):
         attach_sources(result, docs[:1], 'matched')
+
+@pytest.mark.parametrize('path,payload', [('/ask', PAYLOAD),
+    ('/api/v1/analyze-threat', {'consent': True, 'text': 'Synthetic text'}),
+    ('/api/v1/coercion-check', {})])
+def test_mobile_api_requires_google_identity_on_every_post(path, payload, monkeypatch):
+    from backend.triage import main
+    async def forbidden(*args):
+        pytest.fail('Unauthenticated request reached Gemini')
+    monkeypatch.setattr(main, 'analyze_threat', forbidden)
+    settings = Settings(groq_key='fake', google_client_id=CLIENT_ID, require_google_signin=True)
+    with client(lambda request: pytest.fail('Unauthenticated request reached model'), settings) as api:
+        assert api.post(path, json=payload).status_code == 401
+        assert api.post(path, json=payload, headers={'Authorization': 'Bearer expired'}).status_code == 401
+        assert api.get('/health').status_code == 200
+        assert api.get('/check').status_code == 401
+
+
+def test_mobile_google_identity_allows_triage(monkeypatch):
+    from backend.triage import main
+    from backend.triage.schemas import ThreatAnalysisResponse
+    async def analyze(request):
+        return ThreatAnalysisResponse(scam_probability=10, threat_level='LOW',
+            scam_category='Synthetic', summary='Synthetic assessment', recommended_actions=['Verify.'])
+    async def reputation(url):
+        return 'not_requested', []
+    monkeypatch.setattr(main, 'analyze_threat', analyze)
+    monkeypatch.setattr(main, 'check_url_reputation', reputation)
+    settings = Settings(google_client_id=CLIENT_ID, require_google_signin=True)
+    with client(lambda request: pytest.fail('Unexpected provider'), settings) as api:
+        assert api.post('/api/v1/analyze-threat', json={'consent': True, 'text': 'test'}, headers=AUTH).status_code == 200
+
+
+def test_mobile_requests_are_limited_by_verified_identity():
+    settings = Settings(groq_key='fake', google_client_id=CLIENT_ID, require_google_signin=True)
+    with client(lambda request: success(), settings) as api:
+        for _ in range(10):
+            assert api.post('/ask', json=PAYLOAD, headers=AUTH).status_code == 200
+        response = api.post('/ask', json=PAYLOAD, headers=AUTH)
+        assert response.status_code == 429
+        assert response.headers['retry-after'] == '60'
+        assert api.get('/check', headers=AUTH).status_code == 200
+
+
+def test_optional_allowlist_rejects_other_verified_accounts():
+    settings = Settings(google_client_id=CLIENT_ID, require_google_signin=True,
+                        allowed_google_emails=('allowed@example.com',))
+    with client(lambda request: pytest.fail('Rejected user reached provider'), settings) as api:
+        assert api.get('/check', headers=AUTH).status_code == 403

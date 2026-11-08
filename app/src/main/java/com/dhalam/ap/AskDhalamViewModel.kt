@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.dhalam.ap.data.SecurityStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -129,10 +130,37 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         return true
     }
 
-    fun send(snapshot: SecurityObservation?) {
+    private suspend fun <T> withGoogleSession(
+        refreshIdentity: suspend () -> Pair<String, String>,
+        action: suspend (AskBackendSession) -> T
+    ): T {
+        check(state.signedIn) { "Unlock Dhalam first." }
+        val url = requireNotNull(backendUrl) { "The AI backend URL is not configured." }
+        if (session == null && BuildConfig.DEBUG && url.startsWith("http://")) {
+            return action(AskBackendSession(url))
+        }
+        return withRefreshedGoogleSession(session, refresh = {
+            // Credential Manager owns credentials. Never persist tokens or a client secret.
+            val (token, label) = refreshIdentity()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            check(state.signedIn) { "Session ended. Sign in again." }
+            val refreshed = AskBackendSession(url, token)
+            AskBackend().verifySession(refreshed)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            check(state.signedIn) { "Session ended. Sign in again." }
+            session = refreshed
+            state = state.copy(temporarySignIn = false, localSignIn = false, accountLabel = label)
+            refreshed
+        }, onExpired = { session = null }, action = action)
+    }
+
+    suspend fun analyzeTriage(payload: org.json.JSONObject, refreshIdentity: suspend () -> Pair<String, String>): org.json.JSONObject =
+        withGoogleSession(refreshIdentity) { submitTriage(it.url, it.idToken.orEmpty(), payload) }
+
+    fun send(snapshot: SecurityObservation?, refreshIdentity: suspend () -> Pair<String, String> = { throw AskSignInRequiredException() }) {
         if (state.loading || state.signingIn) return
         val question = state.question.trim()
-        val currentSession = session ?: backendUrl?.let { AskBackendSession(it) }
+        val currentSession = backendUrl
         when {
             !state.signedIn -> return showError("Unlock Dhalam before asking a question.")
             currentSession == null -> return showError("The developer must configure the AI backend URL.")
@@ -143,7 +171,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         job = viewModelScope.launch {
             try {
                 val facts = withContext(Dispatchers.IO) { SecurityStore.repository(getApplication()).all() }
-                val result = AskBackend().ask(requireNotNull(currentSession), question, facts, requireNotNull(snapshot))
+                val result = withGoogleSession(refreshIdentity) { AskBackend().ask(it, question, facts, requireNotNull(snapshot)) }
                 state = state.copy(loading = false, result = result)
             } catch (error: CancellationException) {
                 throw error
@@ -155,8 +183,8 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
                     error = "Your sign-in expired. Sign in with Google again.")
             } catch (_: SocketTimeoutException) {
                 state = state.copy(loading = false, error = "The request timed out. Please try again.")
-            } catch (_: IOException) {
-                state = state.copy(loading = false, error = "Cannot connect. Check your internet connection and try again.")
+            } catch (failure: IOException) {
+                state = state.copy(loading = false, error = connectionFailureMessage(state.backendUrl, failure))
             } catch (error: IllegalStateException) {
                 state = state.copy(loading = false, error = error.message ?: "An answer is unavailable. Please retry.")
             } catch (_: Exception) {

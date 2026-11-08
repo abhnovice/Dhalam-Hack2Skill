@@ -137,3 +137,37 @@ The local backend uses Google gemini-embedding-001 with a SQLite/sqlite-vec inde
 of five public RBI summaries. It does not store your conversations or search
 private incident records. Cloud Run must be redeployed separately to gain this
 version; the emulator’s local backend is the test target.
+
+## Native Android on a physical phone with Cloud Run
+
+The phone APK must be built with `DHALAM_BACKEND_URL` set to the hosted HTTPS
+origin. The default `10.0.2.2` address only works in an emulator.
+
+Sign in with Google. Cloud Run's application verifies the Google signature,
+audience, issuer, expiry and verified email on every AI request. Any verified
+Google account is allowed; biometric unlock alone only authorizes local checks.
+After biometric unlock, cloud AI asks Credential Manager for a previously
+authorized Google account. A backend 401 triggers credential renewal and one
+retry; Google may require an account prompt or explicit sign-in. There is no
+manual token field, bundled developer token, client secret or service-account key.
+Google tokens live only in memory. Use **Google account** to sign in again if
+renewal cannot complete.
+
+**Log out** appears in the header of every native dashboard tab. It clears the
+session, returns to sign-in and cancels the native session's periodic checks.
+Saved scan history remains on the device.
+
+Tap **Scan now**, then ask **AskDhalam**, “Which visible apps have camera
+permission?” Sending shares the question and up to 48 selected facts from the
+latest stored scan with the backend and Gemini. Answers cite those facts. Android
+visibility limits apply; a permission grant does not establish actual use.
+Scam check does not automatically upload the permission inventory.
+
+The Android OAuth client must register `com.dhalam.ap` with the APK's signing
+certificate SHA-1, and the Web client ID must match the backend. OAuth consent
+screen publishing/test-user restrictions still apply. A Google account prompt
+must be completed on the device; automated UI tests do not prove account consent.
+
+Older Flutter builds with a developer-token field are not compatible with this
+Google-user authentication mode. They need a Google sign-in client before using
+the hosted AI endpoints; their local device checks remain available.

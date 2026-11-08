@@ -21,6 +21,8 @@ xcuserdata/
 # Generated builds and dependency caches
 .gradle/
 build/
+!build/apks/
+!build/apks/**
 captures/
 .externalNativeBuild/
 .cxx/

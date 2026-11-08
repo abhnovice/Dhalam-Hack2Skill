@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import json
 import logging
+import time
+from collections import OrderedDict, deque
 import os
 from pathlib import Path
 from typing import Literal
@@ -31,6 +33,8 @@ class Settings:
     google_client_id: str = ""
     model: str = "openai/gpt-oss-20b"
     provider: str = "groq"
+    require_google_signin: bool = False
+    allowed_google_emails: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls):
@@ -41,6 +45,8 @@ class Settings:
             os.getenv("GOOGLE_WEB_CLIENT_ID", "").strip(),
             os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip(),
             os.getenv("AI_PROVIDER", "gemini").strip(),
+            os.getenv("REQUIRE_GOOGLE_SIGNIN", "true" if os.getenv("K_SERVICE") else "false").lower() == "true",
+            tuple(email.strip().lower() for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",") if email.strip()),
         )
 
 
@@ -188,12 +194,15 @@ def create_app(settings: Settings | None = None, transport=None,
 
     api = FastAPI(title="Dhalam AI bridge", lifespan=lifespan, debug=False)
     bearer = HTTPBearer(auto_error=False)
+    # Bounded per-instance demo limit, keyed by verified Google subject, never a client header.
+    user_requests = OrderedDict()
 
     async def authenticate(request: Request,
                            credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-        # Local biometric unlock is enforced on-device, not asserted as a server identity.
-        # Requests without Google credentials are intentionally allowed.
         if "authorization" not in request.headers:
+            if settings.require_google_signin:
+                raise HTTPException(401, "Sign in with Google to use cloud AI.",
+                                    headers={"WWW-Authenticate": "Bearer"})
             return None
         if not settings.google_client_id.endswith(".apps.googleusercontent.com"):
             raise HTTPException(503, "Google sign-in is not configured on the server.")
@@ -201,7 +210,24 @@ def create_app(settings: Settings | None = None, transport=None,
             raise HTTPException(401, "Sign in with Google to continue.",
                                 headers={"WWW-Authenticate": "Bearer"})
         try:
-            return await run_in_threadpool(verify_identity, credentials.credentials, settings.google_client_id)
+            claims = await run_in_threadpool(verify_identity, credentials.credentials, settings.google_client_id)
+            if settings.allowed_google_emails and claims.get("email", "").lower() not in settings.allowed_google_emails:
+                raise HTTPException(403, "This Google account is not authorized to use Dhalam.")
+            if settings.require_google_signin and request.method == "POST":
+                now = time.monotonic()
+                while user_requests and next(iter(user_requests.values()))[-1] <= now - 3600:
+                    user_requests.popitem(last=False)
+                subject = claims["sub"]
+                if subject not in user_requests and len(user_requests) >= 4096:
+                    raise HTTPException(503, "Service busy. Please retry later.")
+                history = user_requests.setdefault(subject, deque())
+                while history and history[0] <= now - 3600:
+                    history.popleft()
+                if len(history) >= 60 or sum(t > now - 60 for t in history) >= 10:
+                    raise HTTPException(429, "Too many requests. Please wait before trying again.", headers={"Retry-After": "60"})
+                history.append(now)
+                user_requests.move_to_end(subject)
+            return claims
         except HTTPException:
             raise
         except TransportError:
@@ -300,7 +326,7 @@ def create_app(settings: Settings | None = None, transport=None,
             raise HTTPException(502, "Groq returned an incomplete or unsupported answer. Try again.") from None
 
     from .triage.main import app as triage_app
-    api.include_router(triage_app.router)
+    api.include_router(triage_app.router, dependencies=[Depends(authenticate)])
     return api
 
 

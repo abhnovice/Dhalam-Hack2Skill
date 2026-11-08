@@ -74,23 +74,37 @@ Build, storage, hosting and inference can incur charges. The deployment writes
 the resulting `DHALAM_API_URL` back to `.env`. Source-upload and Docker allowlists
 exclude credentials, tests and documentation.
 
-Cloud Run IAM protects every deployed route. Local development is bound to
-loopback; do not expose it publicly. The optional native `/ask` Google sign-in
-verification is preserved, but it is not the same as Cloud Run IAM. Do not make
-the service public simply to bypass a 403. A consumer launch requires a complete
-mobile identity/token exchange, per-user abuse controls and a distribution plan.
+### Mobile Google authentication
 
-For an authorized developer demo, use a short-lived `gcloud auth print-identity-token`
-result in Flutter's **Demo connection**, together with the Cloud Run URL. The
-token stays in screen memory and expires. Do not commit it, bake it into an APK,
-or use an API key as a substitute. The app sends it only to the configured HTTPS
-backend and refuses redirects. On emulator-only local runs use
-`http://10.0.2.2:18765`; iOS simulator can use loopback as platform policy permits.
+Deploy the phone-compatible service with:
 
-Native Android optional Google sign-in still requires Android OAuth client
-registration for `com.dhalam.ap` and its signing SHA-1, plus a Web OAuth client.
-The backend's `GOOGLE_WEB_CLIENT_ID` and native app audience must match. Cloud Run
-IAM and native OAuth are separate layers. Physical sign-in was not verified here.
+```bash
+python -m backend.check --deploy --mobile-auth
+```
+
+This validates `GOOGLE_WEB_CLIENT_ID`, deploys a revision with
+`REQUIRE_GOOGLE_SIGNIN=true`, and only then enables public HTTPS invocation.
+The application requires a Google ID token for `/check`, `/ask`, and all triage
+routes. It verifies signature, expiry, issuer, audience and verified email. Public
+transport does not mean anonymous AI access. `/health` remains public liveness.
+`ALLOWED_GOOGLE_EMAILS` optionally restricts accounts; empty allows any verified
+Google account. Limits are 10 POSTs/minute and 60/hour per verified Google subject
+per instance. These in-memory limits reset on restart and are not global quotas.
+
+The native app obtains account tokens through Android Credential Manager, keeps
+them only in memory and retries once with renewed credentials after a backend
+401. Google may require user interaction. Biometric unlock does not create a
+Google credential. The app has no manual developer-token field and contains no
+service-account key. Cloud Run uses its attached runtime identity for Vertex AI.
+The older Flutter demo client needs Google sign-in support for this mode.
+
+Register an Android OAuth client for `com.dhalam.ap` and the APK signing SHA-1,
+using the same Web client audience as `GOOGLE_WEB_CLIENT_ID`. Google OAuth consent
+screen/test-user restrictions must also allow the intended accounts.
+
+The original `--deploy` command remains a private IAM deployment. Do not use it
+to replace a mobile deployment unless intentionally switching clients back to
+IAM access. Developer gcloud tokens are not valid mobile Google-user credentials.
 
 ## Validation boundaries
 
@@ -139,7 +153,7 @@ in Docker/Cloud Run uploads. Rebuild it after editing the corpus or embedding mo
 Deployment checks index freshness before any cloud mutation. Rebuilds are atomic;
 a failed build retains the previous index. Cloud Run loads the packaged index
 read-only; this does not need a persistent volume or a vector-service instance.
-No new cloud deployment was made for this feature.
+The container makes the packaged public-reference index readable by its non-root runtime user.
 
 Each consented text query is embedded with `RETRIEVAL_QUERY`; reference vectors
 use `RETRIEVAL_DOCUMENT`. Up to three references within cosine distance 0.40 and

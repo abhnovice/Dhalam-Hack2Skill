@@ -110,7 +110,8 @@ fun SecurityDashboard(
     onClearAsk: () -> Unit,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
-    captureStatus: String = "Unavailable"
+    captureStatus: String = "Unavailable",
+    onAnalyze: suspend (org.json.JSONObject) -> org.json.JSONObject = { submitTriage(BuildConfig.ASK_BACKEND_URL, "", it) }
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -276,6 +277,7 @@ fun SecurityDashboard(
                     )
                     Column(Modifier.weight(1f)) {
                         Caption(lastScan?.let { "Last scan · $it" } ?: "Device review")
+                        TextButton(onClick = onSignOut) { Text("Log out") }
                     }
                     Button(onClick = onScan, enabled = !scanning) {
                         Icon(painterResource(R.drawable.material_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
@@ -315,7 +317,7 @@ fun SecurityDashboard(
                 }
 
                 if (tab == DashboardTab.Triage) {
-                    ScamTriagePanel(Modifier.weight(1f))
+                    ScamTriagePanel(Modifier.weight(1f), onAnalyze, onSignIn)
                 } else key(tab) {
                     val listState = rememberLazyListState()
                     LaunchedEffect(askState.loading, askState.result, askState.error) {
@@ -351,7 +353,7 @@ fun SecurityDashboard(
                             }
                         }
                         when (tab) {
-                            DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel() }
+                            DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel(analyze = onAnalyze, onSignIn = onSignIn) }
                             DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
                             DashboardTab.Permissions -> {
                                 item("permission_summary") {

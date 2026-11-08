@@ -83,10 +83,10 @@ flutter build apk --debug
 flutter build ios --release --no-codesign
 ```
 
-The current Cloud Run demo is private. Its URL is written to `backend/.env` as
-`DHALAM_API_URL`. The backend README explains session-only developer access.
-A consumer authentication flow and production signing are still required for
-public distribution. Do not publish service credentials or identity tokens.
+The native phone build uses hosted Cloud Run with verified Google-user authentication.
+Its URL is written to `backend/.env` as `DHALAM_API_URL`. The backend README
+explains mobile deployment, account limits and OAuth client setup. Production
+signing remains separate. Do not publish service credentials or identity tokens.
 
 ## Technical progress and limits
 

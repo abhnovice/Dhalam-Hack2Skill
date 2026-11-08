@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SecurityToolsTest {
+    @Test fun connectionErrorsExplainPhoneAndCloudFailuresWithoutLeakingDetails() {
+        val failure = java.io.IOException("secret-token must never appear")
+        assertTrue(connectionFailureMessage("http://10.0.2.2:18765", failure).contains("only in an Android emulator"))
+        assertTrue(connectionFailureMessage("http://127.0.0.1:18765", failure).contains("adb reverse"))
+        val remote = connectionFailureMessage("https://demo.run.app", failure)
+        assertTrue(remote.contains("internet connection"))
+        assertFalse(remote.contains("secret-token"))
+        assertTrue(connectionFailureMessage("https://demo.run.app", java.net.SocketTimeoutException()).contains("too long"))
+        assertTrue(connectionFailureMessage("bad url", IllegalArgumentException()).contains("backend URL is invalid"))
+    }
+
     @Test fun chatHeadlinesDoNotPromiseSafety() {
         assertEquals("No clear scam signs.", triageHeadline("LOW"))
         assertEquals("Pause. Let’s check first.", triageHeadline("MEDIUM"))

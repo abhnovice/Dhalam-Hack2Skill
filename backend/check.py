@@ -25,10 +25,12 @@ def gcloud(*args, capture=False):
     return result.stdout.strip() if capture else None
 
 
-def deploy():
+def deploy(mobile_auth=False):
     # Package only a fresh public-reference index; never rebuild with user data.
     from .triage.retrieval import index_ready
     index_ready()
+    if mobile_auth and not os.getenv('GOOGLE_WEB_CLIENT_ID', '').endswith('.apps.googleusercontent.com'):
+        raise ValueError('Configure GOOGLE_WEB_CLIENT_ID before mobile deployment')
     project = os.environ['GOOGLE_CLOUD_PROJECT']
     region = os.getenv('CLOUD_RUN_REGION', 'asia-south1')
     service = os.getenv('CLOUD_RUN_SERVICE', 'dhalam-api')
@@ -51,17 +53,25 @@ def deploy():
         'GEMINI_MODEL': os.environ['GEMINI_MODEL'],
         'AI_PROVIDER': 'gemini',
     }
+    if mobile_auth:
+        config['REQUIRE_GOOGLE_SIGNIN'] = 'true'
+        config['GOOGLE_WEB_CLIENT_ID'] = os.environ['GOOGLE_WEB_CLIENT_ID']
+        config['ALLOWED_GOOGLE_EMAILS'] = os.getenv('ALLOWED_GOOGLE_EMAILS', '')
     gcloud('run', 'deploy', service, '--source=' + str(ROOT), '--region=' + region,
            '--service-account=' + identity, '--build-service-account=projects/' + project + '/serviceAccounts/' + build_identity,
            '--no-allow-unauthenticated',
            '--memory=512Mi', '--cpu=1', '--min-instances=0', '--max-instances=2',
            '--concurrency=4', '--timeout=90', '--quiet',
-           '--set-env-vars=' + ','.join(k + '=' + v for k, v in config.items()))
+           '--set-env-vars=^|^' + '|'.join(k + '=' + v for k, v in config.items()))
+    if mobile_auth:
+        # Enable public transport only after the revision enforcing Google identity is ready.
+        gcloud('run', 'services', 'add-iam-policy-binding', service, '--region=' + region,
+               '--member=allUsers', '--role=roles/run.invoker', '--quiet', '--format=none')
     url = gcloud('run', 'services', 'describe', service, '--region=' + region,
                  '--format=value(status.url)', capture=True)
     set_key(ROOT / '.env', 'DHALAM_API_URL', url)
-    print('Private Cloud Run URL saved to backend/.env:', url)
-    print('Mobile demos need a short-lived identity token; this is not public production authentication.')
+    print('Cloud Run URL saved to backend/.env:', url)
+    print('Verified Google sign-in required.' if mobile_auth else 'Private service: Cloud Run IAM required.')
 
 
 def setup_reputation():
@@ -190,6 +200,7 @@ def main():
     parser.add_argument('--setup-reputation', action='store_true', help='Configure restricted Safe Browsing key and Cloud Run secret for the non-commercial demo')
     parser.add_argument('--live', action='store_true', help='Make one synthetic Vertex AI request (uses quota)')
     parser.add_argument('--deploy', action='store_true', help='Deploy a private Cloud Run demo (uses billing)')
+    parser.add_argument('--mobile-auth', action='store_true', help='Deploy public HTTPS transport with required verified Google user authentication')
     parser.add_argument('--cloud-auth', action='store_true', help='Use gcloud identity in memory to check private Cloud Run')
     parser.add_argument('--build-index', action='store_true', help='Embed curated public references into local SQLite (uses Google quota)')
     parser.add_argument('--evaluate', action='store_true', help='Validate synthetic cases; add --live to call Gemini')
@@ -220,7 +231,7 @@ def main():
         setup_reputation()
         return 0
     if args.deploy:
-        deploy()
+        deploy(mobile_auth=args.mobile_auth)
         return 0
     if args.live:
         asyncio.run(live())

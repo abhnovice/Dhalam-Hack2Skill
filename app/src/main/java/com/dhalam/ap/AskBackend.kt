@@ -102,7 +102,7 @@ class AskBackend {
 private fun checkResponseCode(code: Int) {
     if (code == 401) throw AskSignInRequiredException()
     if (code != 200) throw IllegalStateException(when (code) {
-        403 -> "Please verify your Google account email before signing in."
+        403 -> "This Google account is not authorized. Use an allowed account with a verified email."
         413, 422 -> "The scan could not be processed. Scan again and retry."
         429 -> "The service limit was reached. Please try again later."
         503 -> "The service is not ready. Please try again later."
