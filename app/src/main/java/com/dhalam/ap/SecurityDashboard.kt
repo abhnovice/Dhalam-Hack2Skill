@@ -87,6 +87,7 @@ private val DarkColors = darkColorScheme(
 private val DhalamTypography = Typography()
 
 private enum class DashboardTab(val label: String, val iconRes: Int) {
+    Triage("Scam check", R.drawable.material_search),
     Access("Access", R.drawable.material_person),
     Permissions("AskDhalam", R.drawable.material_chat),
     Developer("Developer", R.drawable.material_code),
@@ -111,7 +112,7 @@ fun SecurityDashboard(
     onSignOut: () -> Unit,
     captureStatus: String = "Unavailable"
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Permissions.name) }
+    var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
     var query by rememberSaveable { mutableStateOf("") }
 
     var showExports by rememberSaveable { mutableStateOf(false) }
@@ -282,6 +283,17 @@ fun SecurityDashboard(
                         Text(if (scanning) "Scanning…" else "Scan now")
                     }
                 }
+                if (captureStatus == "Active") {
+                    Surface(color = colors.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Coercion Shield · screen capture active", style = MaterialTheme.typography.titleMedium)
+                            Text("Pause before viewing private information. Stop sharing using Android or the sharing app. Dhalam cannot disconnect another app’s session.")
+                            if (observation?.services?.isNotEmpty() == true) {
+                                Text("Accessibility access was also enabled at the last check. Both signals can be legitimate; they do not prove fraud.")
+                            }
+                        }
+                    }
+                }
                 if (tab == DashboardTab.Permissions) {
                     OutlinedTextField(
                         value = query,
@@ -302,7 +314,9 @@ fun SecurityDashboard(
                     )
                 }
 
-                key(tab) {
+                if (tab == DashboardTab.Triage) {
+                    ScamTriagePanel(Modifier.weight(1f))
+                } else key(tab) {
                     val listState = rememberLazyListState()
                     LaunchedEffect(askState.loading, askState.result, askState.error) {
                         if (askState.loading || askState.result != null || askState.error != null) {
@@ -337,6 +351,7 @@ fun SecurityDashboard(
                             }
                         }
                         when (tab) {
+                            DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel() }
                             DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
                             DashboardTab.Permissions -> {
                                 item("permission_summary") {

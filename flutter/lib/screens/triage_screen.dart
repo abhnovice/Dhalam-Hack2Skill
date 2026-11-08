@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../features/security_tools.dart';
 import 'security_tools_screen.dart';
+import 'dashboard_screen.dart';
 
 /// Private Cloud Run demo: short-lived IAM token entered for this session only.
 /// No Google API key or service-account credential is shipped in the app.
@@ -35,16 +36,22 @@ class _TriageScreenState extends State<TriageScreen> {
   final _picker = ImagePicker();
   Uint8List? _image;
   String? _mime;
-  bool _consent = false, _busy = false;
-  String? _error, _submittedMessage, _submittedUrl;
-  Map<String, dynamic>? _result;
+  bool _busy = false;
+  final _turns = <Map<String, dynamic>>[];
+  final _scroll = ScrollController();
+  String? _error;
   HttpClient? _client;
 
   @override
   void initState() {
     super.initState();
     _url.text = widget.initialUrl;
+    _message.text = widget.initialUrl;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      if (kDebugMode && _endpoint.text.isEmpty) {
+        // adb reverse tcp:18765 tcp:18765 connects to the loopback-only backend.
+        _endpoint.text = 'http://127.0.0.1:18765';
+      }
       _recoverImage();
     }
   }
@@ -64,6 +71,7 @@ class _TriageScreenState extends State<TriageScreen> {
   @override
   void dispose() {
     _client?.close(force: true);
+    _scroll.dispose();
     for (final controller in [_message, _url, _endpoint, _token]) {
       controller.dispose();
     }
@@ -90,8 +98,7 @@ class _TriageScreenState extends State<TriageScreen> {
       setState(() {
         _image = bytes;
         _mime = mime;
-        _consent = false;
-        _result = null;
+        _error = null;
       });
     }
   }
@@ -116,10 +123,19 @@ class _TriageScreenState extends State<TriageScreen> {
     }
   }
 
-  void _edited(String _) => setState(() {
-    _result = null;
-    _consent = false;
-  });
+  void _edited(String _) => setState(() => _error = null);
+
+  void _toLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   Future<Map<String, dynamic>> _request(Map<String, dynamic> payload) async {
     final base = Uri.tryParse(_endpoint.text.trim());
@@ -184,55 +200,137 @@ class _TriageScreenState extends State<TriageScreen> {
   }
 
   Future<void> _analyze() async {
-    if (!_consent || _busy) return;
-    if (_message.text.trim().isEmpty &&
-        _url.text.trim().isEmpty &&
-        _image == null) {
-      setState(() => _error = 'Add a message, link or screenshot first.');
+    if (_busy) return;
+    final message = _message.text.trim();
+    if (message.isEmpty && _image == null) return;
+    final link = RegExp(r'https?://[^\s]+').firstMatch(message)?.group(0);
+    final url = link ?? '';
+    final prior = _turns
+        .where((turn) => turn['result'] != null)
+        .map(
+          (turn) => {
+            'message': turn['text'],
+            'url': turn['url'],
+            if (turn['image'] != null)
+              'note': 'Earlier image is not included in this request.',
+          },
+        )
+        .toList();
+    final text = prior.isEmpty
+        ? message
+        : jsonEncode({
+            'earlier_user_messages': prior,
+            'latest_user_message': message,
+          });
+    if (text.length > 12000 || _turns.length >= 6) {
+      setState(
+        () => _error = 'This chat is full. Start a new chat from the top menu.',
+      );
       return;
     }
-    final message = _message.text.trim(), url = _url.text.trim();
+    final allowed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.cloud_outlined, size: 36),
+        title: const Text('Send for an AI check?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Device checks stay on your phone. Earlier photos are not sent again.',
+              ),
+              ExpansionTile(
+                title: const Text('Privacy details'),
+                children: const [
+                  Text(
+                    'Links may also be checked with Google Safe Browsing. Dhalam does not save submissions on its server; Google service retention policies apply. Chat stays in memory until you leave or clear it.',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Send for check'),
+          ),
+        ],
+      ),
+    );
+    if (allowed != true || !mounted) return;
+    FocusScope.of(context).unfocus();
+    final turn = <String, dynamic>{
+      'text': message,
+      'context': text,
+      'url': url,
+      'image': _image,
+    };
     setState(() {
       _busy = true;
       _error = null;
-      _result = null;
+      _turns.add(turn);
     });
+    _toLatest();
     try {
       final result = await (widget.analyze ?? _request)({
         'consent': true,
-        if (message.isNotEmpty) 'text': message,
+        if (text.isNotEmpty) 'text': text,
         if (url.isNotEmpty) 'url': url,
         if (_image != null) 'image_base64': base64Encode(_image!),
         if (_mime != null) 'image_mime_type': _mime,
       });
       if (mounted) {
         setState(() {
-          _result = result;
-          _submittedMessage = message;
-          _submittedUrl = url;
+          turn['result'] = result;
+          _message.clear();
+          _url.clear();
+          _image = null;
+          _mime = null;
         });
       }
     } on FormatException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _turns.remove(turn);
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error =
-              'Could not reach cloud analysis. Check your connection and try again. Local device checks still work.',
-        );
+        setState(() {
+          _error =
+              'I couldn’t connect. Try again in a moment. If you’re being pressured, pause before paying.';
+          _turns.remove(turn);
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+      _toLatest();
     }
   }
 
-  Future<void> _report() async {
-    final result = _result;
-    if (result == null) return;
+  Future<void> _report(Map<String, dynamic> turn) async {
+    final result = turn['result'] as Map<String, dynamic>;
+    try {
+      await widget.journal.load();
+    } catch (_) {
+      // The report retains its existing local observations if storage is unavailable.
+    }
+    if (!mounted) return;
     final report = incidentReport(
       result,
-      _submittedMessage ?? '',
-      _submittedUrl ?? '',
+      (turn['context'] ?? turn['text']) as String,
+      turn['url'] as String,
       widget.journal.report(widget.ios),
     );
     await showDialog<void>(
@@ -271,193 +369,514 @@ class _TriageScreenState extends State<TriageScreen> {
     );
   }
 
+  Future<void> _connection() => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Demo connection'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _endpoint,
+              decoration: const InputDecoration(labelText: 'Backend URL'),
+            ),
+            TextField(
+              controller: _token,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Cloud Run token (empty for local)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Session only. Never enter an API key.'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _details(Map<String, dynamic> turn) async {
+    final result = turn['result'] as Map<String, dynamic>;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .75,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            children: [
+              Text(
+                'Why this advice?',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 16),
+              Text(result['summary'] as String),
+              for (final section in {
+                'coercion_markers': 'Warning signs',
+                'evidence_extracted': 'What you shared',
+                'recommended_actions': 'What to do',
+              }.entries) ...[
+                const SizedBox(height: 16),
+                Text(
+                  section.value,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                for (final item in (result[section.key] as List? ?? []))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('• $item'),
+                  ),
+              ],
+              const SizedBox(height: 16),
+              Text(reputationLabel(result['url_reputation'] as String?)),
+              const SizedBox(height: 16),
+              Text(
+                'Sources for this advice',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              SelectableText(referenceNotes(result)),
+              Text(
+                result['limitations'] as String? ??
+                    'AI can be wrong. Verify independently.',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'AI concern: ${result['scam_probability']}/100. Not a measured probability.',
+              ),
+              Text('Model: ${result['model']} · ${result['analyzed_at']}'),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _report(turn);
+                },
+                icon: const Icon(Icons.description_outlined),
+                label: const Text('Preview incident report'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _answer(Map<String, dynamic> turn) {
+    final result = turn['result'] as Map<String, dynamic>;
+    final level = result['threat_level'];
+    final urgent = level == 'HIGH' || level == 'CRITICAL';
+    final low = level == 'LOW';
+    final color = urgent
+        ? const Color(0xFFB73535)
+        : low
+        ? const Color(0xFF246B73)
+        : const Color(0xFF986000);
+    final headline = urgent
+        ? 'Stop. This looks risky.'
+        : low
+        ? 'No clear scam signs.'
+        : 'Pause. Let’s check first.';
+    final summary = result['summary'] as String? ?? '';
+    final sentences = summary.split(RegExp(r'(?<=[.!?])\s+'));
+    final short = sentences.first;
+    final actions = (result['recommended_actions'] as List? ?? [])
+        .cast<String>();
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        margin: const EdgeInsets.only(top: 12, bottom: 24),
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: color.withValues(alpha: .25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    urgent
+                        ? Icons.front_hand_rounded
+                        : low
+                        ? Icons.search_rounded
+                        : Icons.pause_rounded,
+                    color: color,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    headline,
+                    style: TextStyle(
+                      fontSize: 25,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              short.length > 200 ? '${short.substring(0, 197)}…' : short,
+              style: const TextStyle(fontSize: 18, height: 1.45),
+            ),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.arrow_circle_right_outlined, color: color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      actions.first,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              low
+                  ? 'This does not prove it is safe.'
+                  : 'AI can be wrong. Check independently.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _details(turn),
+              icon: const Icon(Icons.info_outline),
+              label: const Text('Why? Show details'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final result = _result;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Ask Dhalam')),
+      appBar: AppBar(
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined),
+            SizedBox(width: 10),
+            Text('Dhalam'),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Chat options',
+            enabled: !_busy,
+            onSelected: (choice) async {
+              if (choice == 'connection') {
+                await _connection();
+              }
+              if (choice == 'device' && context.mounted) {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DashboardScreen(),
+                  ),
+                );
+              }
+              if (choice == 'clear') {
+                setState(() {
+                  _turns.clear();
+                  _message.clear();
+                  _image = null;
+                  _mime = null;
+                  _error = null;
+                });
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'clear', child: Text('New chat')),
+              PopupMenuItem(value: 'device', child: Text('Device checks')),
+              PopupMenuItem(
+                value: 'connection',
+                child: Text('Demo connection'),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
             const CaptureWarning(),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.all(20),
+                controller: _scroll,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 children: [
-                  Text(
-                    'Pause. Check the request.',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const Text(
-                    'Paste a suspicious message, link or screenshot. AI can identify warning signs, but cannot verify a sender or guarantee safety.',
-                  ),
-                  ExpansionTile(
-                    title: const Text('Demo connection'),
-                    children: [
-                      TextField(
-                        controller: _endpoint,
-                        enabled: !_busy,
-                        decoration: const InputDecoration(
-                          labelText: 'Backend HTTPS URL',
+                  if (_turns.isEmpty) ...[
+                    const SizedBox(height: 20),
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer,
+                          borderRadius: BorderRadius.circular(32),
+                        ),
+                        child: Icon(
+                          Icons.forum_outlined,
+                          size: 64,
+                          color: colors.primary,
                         ),
                       ),
-                      TextField(
-                        controller: _token,
-                        enabled: !_busy,
-                        obscureText: true,
-                        enableSuggestions: false,
-                        autocorrect: false,
-                        decoration: const InputDecoration(
-                          labelText: 'Short-lived Cloud Run access token',
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Not sure?\nLet’s check together.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 30,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Tell me what happened, or show me a message.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        height: 1.4,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.currency_rupee, size: 20),
+                          label: const Text('Someone wants money'),
+                          onPressed: () {
+                            _message.text =
+                                'Someone is asking me to send money. ';
+                            setState(() {});
+                          },
                         ),
-                      ),
-                      const Text(
-                        'Connection token stays in memory for this screen. Do not enter a Google API key here.',
-                      ),
-                    ],
-                  ),
-                  TextField(
-                    controller: _message,
-                    enabled: !_busy,
-                    onChanged: _edited,
-                    maxLines: 5,
-                    maxLength: 12000,
-                    decoration: const InputDecoration(
-                      labelText: 'Suspicious message or situation',
-                      hintText: 'What is someone asking you to do?',
+                        ActionChip(
+                          avatar: const Icon(Icons.link, size: 20),
+                          label: const Text('I got a link'),
+                          onPressed: () {
+                            _message.text = 'Can you check this link? ';
+                            setState(() {});
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.image_outlined, size: 20),
+                          label: const Text('Check a screenshot'),
+                          onPressed: () => _pick(ImageSource.gallery),
+                        ),
+                      ],
                     ),
-                  ),
-                  TextField(
-                    controller: _url,
-                    enabled: !_busy,
-                    onChanged: _edited,
-                    maxLength: 4096,
-                    decoration: const InputDecoration(
-                      labelText: 'Suspicious link (optional)',
-                      hintText: 'https://…',
-                    ),
-                  ),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _pick(ImageSource.gallery),
-                        icon: const Icon(Icons.image_outlined),
-                        label: const Text('Choose screenshot'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _pick(ImageSource.camera),
-                        icon: const Icon(Icons.camera_alt_outlined),
-                        label: const Text('Take photo'),
-                      ),
-                    ],
-                  ),
-                  if (_image != null) ...[
-                    Image.memory(
-                      _image!,
-                      height: 180,
-                      errorBuilder: (_, error, stack) =>
-                          const Text('Image preview unavailable'),
-                    ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                              _image = null;
-                              _mime = null;
-                              _result = null;
-                              _consent = false;
-                            }),
-                      child: const Text('Remove image'),
+                    const SizedBox(height: 20),
+                    Text(
+                      'No need to decide in a hurry.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: colors.onSurfaceVariant),
                     ),
                   ],
-                  const Text(
-                    'Remove passwords, OTPs, account numbers and personal details first. Only these inputs go to the backend and Google for analysis. A link may also be checked with Google Safe Browsing. Device inventories stay on your phone. Dhalam does not save submissions on its server; Google service retention policies apply.',
-                  ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _consent,
-                    onChanged: _busy
-                        ? null
-                        : (value) => setState(() => _consent = value ?? false),
-                    title: const Text(
-                      'I consent to sending this submission for cloud analysis.',
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _consent && !_busy ? _analyze : null,
-                    icon: const Icon(Icons.search),
-                    label: Text(_busy ? 'Analyzing…' : 'Analyze submission'),
-                  ),
-                  if (_busy) const LinearProgressIndicator(),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                  for (final turn in _turns) ...[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        margin: const EdgeInsets.only(left: 36),
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer,
+                          borderRadius: BorderRadius.circular(22),
                         ),
-                      ),
-                    ),
-                  if (result != null)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${result['threat_level']} · ${result['scam_category']}',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            Text(
-                              'AI concern score: ${result['scam_probability']}/100 — not a measured probability',
-                            ),
-                            Text(result['summary'] as String),
-                            for (final section in {
-                              'coercion_markers': 'Warning signs',
-                              'evidence_extracted': 'Submitted evidence',
-                              'recommended_actions': 'Next steps',
-                            }.entries) ...[
-                              const SizedBox(height: 12),
+                            if ((turn['text'] as String).isNotEmpty)
                               Text(
-                                section.value,
-                                style: Theme.of(context).textTheme.titleMedium,
+                                turn['text'] as String,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  height: 1.4,
+                                ),
                               ),
-                              for (final item
-                                  in (result[section.key] as List? ?? []))
-                                Text('• $item'),
-                            ],
-                            const SizedBox(height: 12),
-                            Text(
-                              reputationLabel(
-                                result['url_reputation'] as String?,
+                            if (turn['image'] != null)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.image_outlined),
+                                    SizedBox(width: 8),
+                                    Text('Photo shared'),
+                                  ],
+                                ),
                               ),
-                            ),
-                            Text(
-                              result['limitations'] as String? ??
-                                  'AI can make mistakes; verify independently.',
-                            ),
-                            Text(
-                              'Model: ${result['model']} · ${result['analyzed_at']}',
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: _report,
-                              icon: const Icon(Icons.description_outlined),
-                              label: const Text('Preview incident report'),
-                            ),
                           ],
                         ),
                       ),
                     ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'If you suspect financial fraud, contact your bank promptly and report through 1930 or cybercrime.gov.in. Dhalam does not file a complaint for you.',
+                    if (turn['result'] != null) _answer(turn),
+                  ],
+                  if (_busy)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              'I’m checking. Take a breath.',
+                              style: TextStyle(fontSize: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: colors.error, fontSize: 18),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: colors.surface,
+                border: Border(top: BorderSide(color: colors.outlineVariant)),
+              ),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_image != null)
+                    Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            _image!,
+                            width: 52,
+                            height: 52,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, error, stack) =>
+                                const Icon(Icons.image_outlined),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(child: Text('Photo ready to check')),
+                        IconButton(
+                          tooltip: 'Remove photo',
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                  _image = null;
+                                  _mime = null;
+                                }),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  TextField(
+                    controller: _message,
+                    enabled: !_busy,
+                    onChanged: _edited,
+                    minLines: 1,
+                    maxLines: 3,
+                    maxLength: 12000,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: InputDecoration(
+                      hintText: 'Type or paste a message…',
+                      counterText: '',
+                      filled: true,
+                      fillColor: colors.surfaceContainerLowest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Choose screenshot',
+                        onPressed: _busy
+                            ? null
+                            : () => _pick(ImageSource.gallery),
+                        icon: const Icon(Icons.image_outlined),
+                      ),
+                      IconButton(
+                        tooltip: 'Take photo',
+                        onPressed: _busy
+                            ? null
+                            : () => _pick(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt_outlined),
+                      ),
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed:
+                            !_busy &&
+                                (_message.text.trim().isNotEmpty ||
+                                    _image != null)
+                            ? _analyze
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(110, 48),
+                        ),
+                        icon: const Icon(Icons.arrow_upward_rounded),
+                        label: const Text(
+                          'Check',
+                          style: TextStyle(fontSize: 18),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -477,6 +896,31 @@ String reputationLabel(String? status) => switch (status) {
     'URL reputation is not configured. AI reviewed the URL text only.',
   _ => 'No URL reputation lookup requested.',
 };
+
+String referenceNotes(Map<String, dynamic> result) {
+  final sources = result['sources'] as List? ?? [];
+  if (sources.isEmpty) {
+    return switch (result['grounding_status']) {
+      'no_match' =>
+        'No close reference found in the small advisory collection. This does not establish safety.',
+      'matched' =>
+        'Related references were retrieved, but none was cited for this advice.',
+      'not_requested' =>
+        'No usable text was available for reference retrieval.',
+      _ =>
+        'Reference retrieval unavailable. This answer is not backed by retrieved sources.',
+    };
+  }
+  final entries = sources
+      .map(
+        (source) =>
+            '${source['publisher']} — ${source['title']}\n'
+            'Published: ${source['published']} · Reviewed: ${source['reviewed']}\n'
+            '${source['summary']}\n${source['url']}',
+      )
+      .join('\n\n');
+  return 'Official guidance about reported patterns, not proof of the same scam or attacker.\n\n$entries';
+}
 
 String incidentReport(
   Map<String, dynamic> result,
@@ -510,6 +954,9 @@ Extracted content: ${(result['evidence_extracted'] as List? ?? []).join('; ')}
 Suggested actions: ${(result['recommended_actions'] as List? ?? []).join('; ')}
 ${reputationLabel(result['url_reputation'] as String?)}
 ${result['limitations'] ?? ''}
+
+REFERENCE GUIDANCE
+${referenceNotes(result)}
 
 LOCAL DEVICE OBSERVATIONS
 $observations

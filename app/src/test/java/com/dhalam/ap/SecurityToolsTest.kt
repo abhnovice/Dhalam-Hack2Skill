@@ -4,6 +4,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SecurityToolsTest {
+    @Test fun chatHeadlinesDoNotPromiseSafety() {
+        assertEquals("No clear scam signs.", triageHeadline("LOW"))
+        assertEquals("Pause. Let’s check first.", triageHeadline("MEDIUM"))
+        assertEquals("Stop. This looks risky.", triageHeadline("HIGH"))
+        assertEquals("Pause. Let’s check first.", triageHeadline("UNKNOWN"))
+    }
+
+    @Test fun triageConnectionRejectsRemoteCleartextAndCredentialUrls() {
+        assertEquals("http://127.0.0.1:18765", triageOrigin("http://127.0.0.1:18765/", true))
+        assertEquals("https://demo.run.app", triageOrigin("https://demo.run.app", false))
+        listOf("http://remote.example", "https://user:password@example.com", "https://example.com?token=x",
+            "https://example.com/path", "https://example.com:99999").forEach { value ->
+            assertTrue(runCatching { triageOrigin(value, true) }.isFailure)
+        }
+        assertTrue(runCatching { triageOrigin("http://127.0.0.1:18765", false) }.isFailure)
+    }
+    @Test fun boundedImageReadRejectsOversizeInput() {
+        assertArrayEquals(byteArrayOf(1, 2), byteArrayOf(1, 2).inputStream().readBounded(2))
+        assertTrue(runCatching { byteArrayOf(1, 2, 3).inputStream().readBounded(2) }.isFailure)
+    }
+
     @Test fun linksExposeTheDestinationWithoutOpeningIt() {
         val result = inspectSecurityLink("https://trusted.example@evil.example/login")
         assertEquals("evil.example", result.host)

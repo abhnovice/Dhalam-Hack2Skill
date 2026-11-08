@@ -1,6 +1,7 @@
 package com.dhalam.ap
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.dhalam.ap.data.SecurityFact
@@ -10,6 +11,24 @@ import org.junit.Test
 
 class AskDhalamTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun scamChatRequiresExplicitConsentAndCanCancel() {
+        compose.setContent { MaterialTheme { ScamTriagePanel(androidx.compose.ui.Modifier.fillMaxSize()) } }
+        compose.onNodeWithText("Check").assertIsNotEnabled()
+        compose.onNode(hasSetTextAction()).performTextInput("Someone is asking for money")
+        compose.onNodeWithText("Check").performClick()
+        compose.onNodeWithText("Send for an AI check?").assertIsDisplayed()
+        compose.onNodeWithText("Not now").performClick()
+        compose.onNodeWithText("Send for an AI check?").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertTextContains("Someone is asking for money")
+    }
+
+    @Test fun referenceGuidanceUsesReturnedSourcesAndDisclosesFallback() {
+        assertTrue(referenceNotes(org.json.JSONObject()).contains("not backed by retrieved sources"))
+        val result = org.json.JSONObject("""{"sources":[{"publisher":"RBI","title":"Synthetic reference","url":"https://rbi.org.in/reference"}]}""")
+        assertTrue(referenceNotes(result).contains("https://rbi.org.in/reference"))
+        assertTrue(referenceNotes(result).contains("not proof"))
+    }
 
     private val fact = SecurityFact(7, "camera", "permission", "demo.app",
         "Demo requested android.permission.CAMERA", "granted", 10)
@@ -49,7 +68,7 @@ class AskDhalamTest {
                     false, {}, { sends++ }, { clears++ }, {}, {})
             }
         }
-        compose.onNodeWithText("Send", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Send").performClick()
         compose.onNode(hasSetTextAction()).performImeAction()
         compose.runOnIdle { assertEquals(2, sends) }
         compose.onNodeWithText("Clear").performClick()
@@ -60,7 +79,7 @@ class AskDhalamTest {
         compose.setContent {
             MaterialTheme { AskDhalamInput(AskUiState(settingsReady = true), false, {}, {}, {}, {}, {}) }
         }
-        compose.onNodeWithText("Send", useUnmergedTree = true).assertIsNotEnabled()
+        compose.onNodeWithText("Send").assertIsNotEnabled()
     }
 
     @Test fun signedOutUserSeesGoogleSignInInsteadOfTokenSettings() {
@@ -72,7 +91,7 @@ class AskDhalamTest {
         }
         compose.onNodeWithText("Sign in with Google").performClick()
         compose.runOnIdle { assertEquals(1, signIns) }
-        compose.onNodeWithText("Send", useUnmergedTree = true).assertIsNotEnabled()
+        compose.onNodeWithText("Send").assertIsNotEnabled()
         compose.onNodeWithText("Configure backend").assertDoesNotExist()
     }
 

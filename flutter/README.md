@@ -87,15 +87,17 @@ and `-Dorg.gradle.java.installations.paths=<full-JDK-home>`.
 
 ## Scam triage (Android and iOS)
 
-Tap **Ask Dhalam — check a suspicious request**. Enter a message/link or select a
+The app opens directly into chat. Paste a message/link or select a
 JPEG, PNG or WebP screenshot (up to 4 MiB). Camera and library selection use the
-native picker. Review/redact private details, explicitly consent, then Analyze.
-Changing the input resets consent. Submissions are not saved in the local journal.
+native picker. Review/redact private details, tap Check, then explicitly confirm
+each submission. Follow-up checks include earlier user text in this chat (up to
+six submissions); earlier images are not resent. New chat clears the in-memory
+conversation. Submissions are not saved in the local journal.
 Device inventories are never included in Flutter cloud requests.
 
 The private Cloud Run developer demo URL is saved as `DHALAM_API_URL` in
 `../backend/.env`. Enter that public URL and a short-lived
-Cloud Run identity token under **Demo connection**. These are session-only. Never
+Cloud Run identity token under **Chat options → Demo connection**. These are session-only. Never
 pass the entire backend `.env` via `--dart-define-from-file`—it contains secrets.
 The `DHALAM_API_URL` Dart define may carry the public URL only; no shell exports
 are needed. See the backend README for local development and deployment.
@@ -133,4 +135,7 @@ Sensitive-permission filtering is a review aid, not a malware classification.
   consumer sign-in. Public launch requires mobile identity and abuse controls.
 - Flutter Android includes opt-in periodic local access checks. Capture
   awareness remains foreground-only; iOS has no periodic access inventory worker. No bank integration, voice triage, on-device Gemma inference,
-  vector retrieval, payment blocking or official complaint submission is claimed.
+  payment blocking or official complaint submission is claimed.
+- Scam triage can now retrieve official RBI reference guidance through the backend.
+  Sources and fallback status appear under Why? and in incident reports; these
+  references do not establish a match to a specific past incident.

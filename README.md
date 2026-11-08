@@ -1,6 +1,6 @@
 # Dhalam AI
 
-Scam triage and device-access review for Android and iOS. Team: **Ladydebuggers**
+A simple scam-checking chat and device-access review for Android and iOS. Team: **Ladydebuggers**
 — Anusha Jain and Abhyudaya Marya.
 
 ## Repository layout
@@ -21,6 +21,20 @@ its own Android host and build entry point. Telemetry and capture bridges overla
 between the two clients. Keep the original client while validating the migration;
 future consolidation can extract shared Kotlin logic after behavior is compared.
 Do not delete `flutter/android/` or merge its manifest into root `app/`.
+
+## Try the app
+
+Flutter opens directly into a chat: paste a message or choose a photo, tap **Check**,
+and confirm consent. A short answer and first action appear in a visual card;
+**Why? Show details** contains evidence and report export. Follow-ups include earlier
+user messages with consent, up to six submissions per in-memory chat. Earlier
+photos are not resent. **Chat options → Device checks** opens the local dashboard.
+
+The native Android app now has the same core scam-chat workflow in **Scam check**,
+plus its separate device-facts chat. It keeps its existing sign-in and worker
+lifecycle. Native image input uses the system picker; Flutter also offers camera.
+
+See [emulator setup and sample conversations](docs/interact-with-app/README.md).
 
 ## Run from this repository
 
@@ -97,10 +111,19 @@ Implemented locally: opt-in Flutter Android periodic access checks and native
 capture-event updates with polling fallback. Checks run approximately every 15
 minutes or later as Android permits; they do not run cloud inference. Disabling
 checks clears their separate baseline. Notification permission is independent. Physical device verification, public mobile authentication, production
-signing, voice triage, on-device Gemma, vector retrieval and bank integration are
+signing, voice triage, on-device Gemma and bank integration are
 not complete. iOS cannot expose Android-style cross-app inventories. No payment
 blocking, other-app capture cancellation or official complaint filing is claimed.
 Research/pitch work is paused at the team's request.
+
+## Reference-backed advice
+
+Scam triage now retrieves related official guidance using Google
+`gemini-embedding-001` (768 dimensions) and a local SQLite/sqlite-vec vector index.
+Five reviewed RBI summaries form the initial collection. Cited sources appear
+under **Why? → Sources for this advice** and in reports. This does not identify
+past victims or prove a match to a known criminal. User content is never added to
+the index. See [build and deployment instructions](backend/README.md#reference-backed-recommendations-vector-retrieval).
 
 ## Share progress safely
 

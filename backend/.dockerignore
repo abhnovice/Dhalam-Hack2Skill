@@ -5,3 +5,5 @@
 !app.py
 !triage/
 !triage/*.py
+!triage/references.json
+!triage/references.sqlite3

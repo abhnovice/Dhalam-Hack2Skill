@@ -104,3 +104,61 @@ accuracy, sub-second inference, document authentication or automatic interventio
 References: [Gemini model](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash),
 [Google ID-token verification](https://developers.google.com/identity/sign-in/android/backend-auth),
 [Cybercrime reporting](https://cybercrime.gov.in/).
+
+## Synthetic chat smoke cases
+
+`python -m backend.check --evaluate` validates the six starter scenarios locally,
+without a model call. `--evaluate --live --limit 6 --output /tmp/dhalam-eval.json`
+runs them sequentially using cloud quota and records schema-valid responses,
+level agreement and direct-model latency. Output files must not already exist.
+The runner stops on the first provider error. These author-labeled synthetic
+examples are a smoke suite, not a real-world fraud-accuracy benchmark or the
+strategy’s proposed 50-case evaluation. Screenshot testing is separate.
+
+## Reference-backed recommendations (vector retrieval)
+
+The backend now uses **SQLite + sqlite-vec** with Google **gemini-embedding-001**,
+768 dimensions and cosine-distance nearest-neighbor search. This is a persistent
+vector index, independent of Android’s ordinary ObjectBox device records. No
+watsonx, Milvus service or separately provisioned vector hosting is required.
+
+The starter corpus is five reviewed summaries from two official RBI advisories:
+[cyber threats and safe banking](https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=53185)
+and [RBI impersonation](https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=58595).
+They describe reported fraud patterns. They are not private FIRs, victim records,
+a live incident feed or proof that a submitted message comes from the same attacker.
+The source URLs, publication dates and review date are in `triage/references.json`.
+
+```bash
+# From the repo root in fastapi-rag; uses five Google embedding calls:
+python -m backend.check --build-index
+```
+
+The generated `triage/references.sqlite3` is ignored by Git and explicitly included
+in Docker/Cloud Run uploads. Rebuild it after editing the corpus or embedding model.
+Deployment checks index freshness before any cloud mutation. Rebuilds are atomic;
+a failed build retains the previous index. Cloud Run loads the packaged index
+read-only; this does not need a persistent volume or a vector-service instance.
+No new cloud deployment was made for this feature.
+
+Each consented text query is embedded with `RETRIEVAL_QUERY`; reference vectors
+use `RETRIEVAL_DOCUMENT`. Up to three references within cosine distance 0.40 and
+within 0.05 of the best hit are supplied to Gemini. These are initial relevance
+heuristics, not a calibrated fraud probability or a validated recall threshold.
+Only IDs returned by retrieval can become citations; titles, URLs and dates are
+resolved by the server. The model can choose not to cite an irrelevant match.
+For image-only input, an initial model pass extracts observations before retrieval
+and a second assessment; this can increase latency.
+
+User queries, query embeddings, image extractions and conversation history are
+never written to the vector database. Embedding calls use Google quota and service
+retention policies still apply. Missing/stale indexes or embedding failures degrade
+to ordinary triage with `grounding_status=unavailable`, not fabricated references.
+An unrelated query can return `no_match`; this does not imply safety.
+
+Flutter and native Android display cited sources under **Why? → Sources for this
+advice**, and include them in incident reports. This is enabled for scam triage;
+the older native `/ask` device-facts route still uses its existing fact citations.
+
+Implementation references: [Google embedding API](https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings),
+[sqlite-vec Python integration](https://alexgarcia.xyz/sqlite-vec/python.html).

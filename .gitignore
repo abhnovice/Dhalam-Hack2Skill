@@ -33,3 +33,6 @@ ephemeral/
 
 # ObjectBox schema backups (keep default.json tracked)
 app/objectbox-models/*.bak
+
+# Rebuildable public-reference vector index
+backend/triage/*.sqlite3

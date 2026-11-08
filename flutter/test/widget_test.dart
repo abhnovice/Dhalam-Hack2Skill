@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dhalam/main.dart';
+import 'package:dhalam/screens/dashboard_screen.dart';
 import 'package:dhalam/screens/triage_screen.dart';
 import 'package:dhalam/screens/security_tools_screen.dart';
 import 'package:dhalam/services/security_scanner.dart';
@@ -48,7 +49,7 @@ void main() {
         ],
       },
     );
-    await tester.pumpWidget(const DhalamApp());
+    await tester.pumpWidget(const MaterialApp(home: DashboardScreen()));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Run security check'));
     await tester.pumpAndSettle();
@@ -111,7 +112,7 @@ void main() {
     messenger.setMockMethodCallHandler(security, (call) async {
       throw PlatformException(code: 'SCAN_FAILED', message: 'Try again');
     });
-    await tester.pumpWidget(const DhalamApp());
+    await tester.pumpWidget(const MaterialApp(home: DashboardScreen()));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Run security check'));
     await tester.pumpAndSettle();
@@ -123,57 +124,150 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('triage requires consent and uploads no device inventory', (
+  test(
+    'source notes preserve citations and disclose unavailable retrieval',
+    () {
+      expect(referenceNotes({}), contains('not backed by retrieved sources'));
+      expect(
+        referenceNotes({'grounding_status': 'no_match'}),
+        contains('does not establish safety'),
+      );
+      final result = {
+        'sources': [
+          {
+            'publisher': 'RBI',
+            'title': 'Synthetic reference',
+            'published': '2024-08-29',
+            'reviewed': '2026-11-08',
+            'summary': 'Test summary',
+            'url': 'https://rbi.org.in/reference',
+          },
+        ],
+      };
+      expect(referenceNotes(result), contains('https://rbi.org.in/reference'));
+      expect(
+        incidentReport(result, 'Test', '', ''),
+        contains('REFERENCE GUIDANCE'),
+      );
+    },
+  );
+
+  testWidgets('home opens a minimal chat', (tester) async {
+    await tester.pumpWidget(const DhalamApp());
+    await tester.pumpAndSettle();
+    expect(find.text('Not sure?\nLet’s check together.'), findsOneWidget);
+    expect(find.text('Run security check'), findsNothing);
+    expect(find.text('Demo connection'), findsNothing);
+    await tester.tap(find.byTooltip('Chat options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Device checks'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets(
+    'chat asks consent per send and retains context without telemetry',
+    (tester) async {
+      final submissions = <Map<String, dynamic>>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TriageScreen(
+            journal: SecurityJournal(),
+            ios: true,
+            analyze: (payload) async {
+              submissions.add(payload);
+              return {
+                'summary': 'Check who is asking first.',
+                'scam_probability': 40,
+                'threat_level': 'MEDIUM',
+                'scam_category': 'Unclear',
+                'recommended_actions': [
+                  'Call using a number you already know.',
+                ],
+              };
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Someone wants money');
+      await tester.pump();
+      await tester.tap(find.text('Check'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pump();
+      await tester.tap(find.text('Check'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Send for check'));
+      await tester.pumpAndSettle();
+      expect(submissions.single, {
+        'consent': true,
+        'text': 'Someone wants money',
+      });
+      expect(find.text('Pause. Let’s check first.'), findsOneWidget);
+      expect(find.textContaining('AI concern:'), findsNothing);
+      await tester.enterText(
+        find.byType(TextField),
+        'They say they are the police.',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Check'));
+      await tester.pumpAndSettle();
+      expect(submissions.length, 1);
+      await tester.tap(find.text('Send for check'));
+      await tester.pumpAndSettle();
+      expect(submissions.length, 2);
+      expect(submissions.last['text'], contains('Someone wants money'));
+      expect(
+        submissions.last['text'],
+        contains('They say they are the police.'),
+      );
+      expect(submissions.last.keys.toSet(), {'consent', 'text'});
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+
+  testWidgets('large text fits and low results do not promise safety', (
     tester,
   ) async {
-    Map<String, dynamic>? submitted;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.8)),
+          child: child!,
+        ),
         home: TriageScreen(
           journal: SecurityJournal(),
           ios: true,
-          analyze: (payload) async {
-            submitted = payload;
-            return {
-              'summary': 'Synthetic result',
-              'scam_probability': 40,
-              'threat_level': 'MEDIUM',
-              'scam_category': 'Unclear',
-              'recommended_actions': ['Verify independently.'],
-            };
+          analyze: (_) async => {
+            'summary': 'There is not enough evidence to prove safety.',
+            'scam_probability': 10,
+            'threat_level': 'LOW',
+            'recommended_actions': ['Check the sender independently.'],
           },
         ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Suspicious message or situation'),
-      'A suspicious request',
-    );
-    await tester.scrollUntilVisible(
-      find.text('Analyze submission'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
-    final button = tester.widget<FilledButton>(
-      find.ancestor(
-        of: find.text('Analyze submission'),
-        matching: find.byWidgetPredicate((w) => w is FilledButton),
-      ),
-    );
-    expect(button.onPressed, isNull);
-    expect(submitted, isNull);
-    await tester.tap(find.byType(CheckboxListTile));
+    await tester.enterText(find.byType(TextField), 'A reminder to myself');
     await tester.pump();
-    await tester.tap(find.text('Analyze submission'));
+    await tester.tap(find.text('Check'));
     await tester.pumpAndSettle();
-    expect(submitted, {'consent': true, 'text': 'A suspicious request'});
-    await tester.scrollUntilVisible(
-      find.text('Synthetic result'),
-      150,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Synthetic result'), findsOneWidget);
+    await tester.tap(find.text('Send for check'));
+    await tester.pumpAndSettle();
+    expect(find.text('No clear scam signs.'), findsOneWidget);
+    expect(find.text('This does not prove it is safe.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     debugDefaultTargetPlatformOverride = null;
   });
@@ -256,7 +350,7 @@ void main() {
       }
       return call.method == 'captureStatus' ? 'Inactive' : null;
     });
-    await tester.pumpWidget(const DhalamApp());
+    await tester.pumpWidget(const MaterialApp(home: DashboardScreen()));
     await tester.pumpAndSettle();
     expect(changes, 0);
     await tester.scrollUntilVisible(

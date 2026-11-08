@@ -55,7 +55,7 @@ class ThreatAnalysisRequest(BaseModel):
         return self
 
 
-class ThreatAnalysisResponse(BaseModel):
+class ThreatAssessment(BaseModel):
     scam_probability: int = Field(ge=0, le=100, description='Uncalibrated AI concern score, not a measured probability')
     threat_level: Literal['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
     scam_category: str = Field(max_length=200)
@@ -64,6 +64,27 @@ class ThreatAnalysisResponse(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list, max_length=12)
     evidence_extracted: list[str] = Field(default_factory=list, max_length=12)
     limitations: str = 'AI assessment may be wrong. Verify independently; a low score does not establish safety.'
+
+
+class ReferenceSource(BaseModel):
+    id: str
+    title: str
+    publisher: str
+    url: str
+    published: str
+    reviewed: str
+    summary: str
+    kind: Literal['official_advisory']
+
+
+class ModelAssessment(ThreatAssessment):
+    source_ids: list[str] = Field(default_factory=list, max_length=3,
+        description='IDs of supplied references actually used for advice; never invent IDs.')
+
+
+class ThreatAnalysisResponse(ThreatAssessment):
+    sources: list[ReferenceSource] = Field(default_factory=list)
+    grounding_status: Literal['matched', 'no_match', 'unavailable', 'not_requested'] = 'unavailable'
 
 
 class AnalysisResult(ThreatAnalysisResponse):

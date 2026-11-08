@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/triage_screen.dart';
+import 'features/security_tools.dart';
+import 'services/security_scanner.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -18,7 +20,10 @@ class DhalamApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      home: const DashboardScreen(),
+      home: TriageScreen(
+        journal: SecurityJournal(),
+        ios: SecurityScanner.isIOS,
+      ),
     );
   }
 }

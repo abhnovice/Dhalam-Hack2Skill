@@ -325,3 +325,56 @@ def test_image_validation_and_mime_mismatch():
     assert ThreatAnalysisRequest(consent=True, image_base64=encoded, image_mime_type='image/png')
     with pytest.raises(ValueError):
         ThreatAnalysisRequest(consent=True, image_base64=encoded, image_mime_type='image/jpeg')
+
+
+def test_vector_index_retrieves_nearest_and_rejects_stale_corpus(tmp_path):
+    from backend.triage import retrieval
+    docs, digest = retrieval.corpus()
+    vectors = [[float(i == j) for i in range(retrieval.DIMENSIONS)] for j in range(len(docs))]
+    path = tmp_path / 'references.sqlite3'
+    retrieval.write_index(path, docs, vectors, digest)
+    assert retrieval.search(vectors[0], path) == [docs[0]]
+    unrelated = [float(i == 100) for i in range(retrieval.DIMENSIONS)]
+    assert retrieval.search(unrelated, path) == []
+    with retrieval.connect(path) as db:
+        db.execute("UPDATE metadata SET value='outdated' WHERE key='corpus_sha256'")
+    with pytest.raises(ValueError):
+        retrieval.search(vectors[0], path)
+
+
+def test_failed_vector_rebuild_preserves_previous_index(tmp_path):
+    from backend.triage import retrieval
+    docs, digest = retrieval.corpus()
+    values = [1.] + [0.] * (retrieval.DIMENSIONS - 1)
+    path = tmp_path / 'references.sqlite3'
+    retrieval.write_index(path, docs, [values] * len(docs), digest)
+    before = path.read_bytes()
+    with pytest.raises(ValueError):
+        retrieval.write_index(path, docs, [[float('nan')]*retrieval.DIMENSIONS]*len(docs), digest)
+    assert path.read_bytes() == before
+
+
+def test_missing_index_falls_back_without_embedding(monkeypatch):
+    import asyncio
+    from backend.triage import retrieval
+    def missing():
+        raise FileNotFoundError()
+    async def forbidden(*args):
+        pytest.fail('Missing index must not spend embedding quota')
+    monkeypatch.setattr(retrieval, 'index_ready', missing)
+    monkeypatch.setattr(retrieval, 'embed', forbidden)
+    assert asyncio.run(retrieval.retrieve('private query')) == ([], 'unavailable')
+
+
+def test_grounding_only_attaches_server_owned_sources():
+    from backend.triage.gemini_service import attach_sources
+    from backend.triage.schemas import ModelAssessment
+    from backend.triage.retrieval import corpus
+    docs, _ = corpus()
+    result = ModelAssessment(scam_probability=80, threat_level='HIGH', scam_category='Coercion',
+        summary='Pause and verify.', source_ids=[docs[0]['id']])
+    attached = attach_sources(result, docs[:1], 'matched')
+    assert attached.sources[0].url == docs[0]['url']
+    result.source_ids = ['invented-police-record']
+    with pytest.raises(ValueError):
+        attach_sources(result, docs[:1], 'matched')
