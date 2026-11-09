@@ -278,6 +278,24 @@ def create_app(settings: Settings | None = None, transport=None,
             logger.warning("Accessibility summary failed: %s", type(error).__name__)
             raise HTTPException(502, "Gemini could not prepare the report. Your local settings are still available.") from None
 
+    from .device_report import DeviceReportRequest, DeviceReport
+
+    @api.post("/device-report", response_model=DeviceReport, dependencies=[Depends(authenticate)])
+    async def device_report(payload: DeviceReportRequest):
+        if len(payload.apps) > payload.totalVisibleApps:
+            raise HTTPException(422, "Invalid device coverage.")
+        if settings.provider != "gemini":
+            raise HTTPException(503, "Gemini is required for device reports.")
+        from .device_report import generate_device_report
+        from google.auth.exceptions import DefaultCredentialsError
+        try:
+            return await generate_device_report(payload, settings.model)
+        except DefaultCredentialsError:
+            raise HTTPException(503, "The AI service is not configured yet. Local review still works.") from None
+        except Exception as error:
+            logger.warning("Remote device summary failed: %s", type(error).__name__)
+            raise HTTPException(502, "Gemini could not prepare this brief. Local review still works.") from None
+
     @api.post("/ask", response_model=Insight, dependencies=[Depends(authenticate)])
     async def ask(payload: AskRequest, request: Request):
         if settings.provider != "gemini" and not settings.groq_key:

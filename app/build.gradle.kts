@@ -11,6 +11,8 @@ val googleWebClientId = providers.gradleProperty("DHALAM_GOOGLE_WEB_CLIENT_ID")
     .orElse("")
 val backendUrl = providers.gradleProperty("DHALAM_BACKEND_URL")
     .orElse(providers.environmentVariable("DHALAM_BACKEND_URL")).orElse("")
+val whatsAppBotNumber = providers.gradleProperty("DHALAM_WHATSAPP_BOT_NUMBER")
+    .orElse(providers.environmentVariable("DHALAM_WHATSAPP_BOT_NUMBER")).orElse("")
 fun configString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
     .replace("\n", "\\n").replace("\r", "\\r") + "\""
 
@@ -40,6 +42,7 @@ android {
         // Public developer configuration only. No API keys or shared passwords in the APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", configString(resolvedGoogleWebClientId))
         buildConfigField("String", "ASK_BACKEND_URL", configString(backendUrl.get()))
+        buildConfigField("String", "WHATSAPP_BOT_NUMBER", configString(whatsAppBotNumber.get().trim()))
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

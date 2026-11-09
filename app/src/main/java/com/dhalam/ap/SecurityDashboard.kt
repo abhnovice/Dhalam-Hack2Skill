@@ -106,7 +106,8 @@ fun SecurityDashboard(
     onAccessReport: suspend (SecurityObservation) -> String = { error("Accessibility report is not configured.") },
     captureStatus: String = "Unavailable",
     onAnalyze: suspend (org.json.JSONObject) -> org.json.JSONObject = { submitTriage(BuildConfig.ASK_BACKEND_URL, "", it) },
-    captureObservation: CaptureObservation = CaptureObservation(recording = captureStatus)
+    captureObservation: CaptureObservation = CaptureObservation(recording = captureStatus),
+    onRemoteReport: suspend (RemoteDeviceInventory) -> String = { error("Sign in to use Gemini.") }
 ) {
     val sectionState = rememberSaveableStateHolder()
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
@@ -357,7 +358,7 @@ fun SecurityDashboard(
 
                         when (displayedTab) {
                             DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel(analyze = onAnalyze, onSignIn = onSignIn) }
-                            DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt, captureObservation) }
+                            DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt, captureObservation, onRemoteReport) }
                             DashboardTab.Permissions -> {
                                 item("device_chat") {
                                     OutlinedCard(onClick = { askOpen = !askOpen },

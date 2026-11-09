@@ -138,6 +138,7 @@ class MainActivity : FragmentActivity() {
                 onClearAsk = askViewModel::clear,
                 onSignIn = ::signInWithGoogle,
                 onSignOut = ::signOutGoogle,
+                onRemoteReport = { inventory -> askViewModel.remoteDeviceReport(inventory, ::refreshGoogleIdentity) },
                 onAccessReport = { snapshot -> askViewModel.accessibilityReport(snapshot, ::refreshGoogleIdentity) },
                 onAnalyze = { payload -> askViewModel.analyzeTriage(payload, ::refreshGoogleIdentity) }
                 )

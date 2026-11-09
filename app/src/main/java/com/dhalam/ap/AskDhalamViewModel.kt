@@ -170,6 +170,9 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    suspend fun remoteDeviceReport(inventory: RemoteDeviceInventory, refreshIdentity: suspend () -> Pair<String, String>): String =
+        withGoogleSession(refreshIdentity) { requestRemoteDeviceReport(it, inventory) }
+
     suspend fun accessibilityReport(snapshot: SecurityObservation, refreshIdentity: suspend () -> Pair<String, String>): String =
         withGoogleSession(refreshIdentity) { requestAccessibilityReport(it, snapshot) }
 

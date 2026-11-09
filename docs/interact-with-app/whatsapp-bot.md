@@ -19,6 +19,19 @@ private phone numbers and Meta credentials remain in the ignored
 Meta registration and deployment do not, by themselves, confirm that a reply
 reached the second phone, so test with a fresh `hello` from that phone.
 
+## Android Tools shortcut
+
+Tools → WhatsApp bot appears after History. Set the public
+`DHALAM_WHATSAPP_BOT_NUMBER` Gradle property to the bot's international phone
+number (or a plain `https://wa.me/NUMBER` link), then rebuild. Do not use Meta's
+Phone number ID, a sender allowlist number, or an access token. The shortcut
+opens a `CHECK:` draft; the user sends it. Save contact opens Android's contact
+editor for confirmation. Neither action sends a message automatically.
+
+The current adapter checks text and images only. It does not listen to personal
+phone/WhatsApp calls or generate live call-risk notifications. Audio analysis
+requires a separate supported audio input and explicit user consent.
+
 ## 1. Create the Meta test channel
 
 1. Open [Meta for Developers](https://developers.facebook.com/apps/) and create

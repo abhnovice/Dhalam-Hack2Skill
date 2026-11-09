@@ -20,7 +20,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun SecurityToolsPanel(observedAt: Long?, capture: CaptureObservation = CaptureObservation()) {
+fun SecurityToolsPanel(observedAt: Long?, capture: CaptureObservation = CaptureObservation(),
+    onRemoteReport: suspend (RemoteDeviceInventory) -> String = { error("Sign in to use Gemini.") }) {
     val context = LocalContext.current
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
@@ -68,7 +69,7 @@ fun SecurityToolsPanel(observedAt: Long?, capture: CaptureObservation = CaptureO
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(trText("Security overview"), style = MaterialTheme.typography.headlineSmall)
         Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            listOf("Findings", "History", "Link inspector", "Privacy review", "Report").forEach { label ->
+            listOf("Findings", "History", "WhatsApp bot", "Bluetooth review", "Link inspector", "Privacy review", "Report").forEach { label ->
                 FilterChip(selected = tab == label, onClick = { tab = label }, label = { Text(trText(label)) }, modifier = Modifier.padding(end = 8.dp))
             }
         }
@@ -107,6 +108,8 @@ fun SecurityToolsPanel(observedAt: Long?, capture: CaptureObservation = CaptureO
                     }
                 }
             }
+            "WhatsApp bot" -> WhatsAppBotPanel()
+            "Bluetooth review" -> BluetoothReviewPanel(onReport = onRemoteReport)
             "History" -> {
                 Text(trText("Changes since previous check"), style = MaterialTheme.typography.titleMedium)
                 Text(trText("Times show observations, not events."))
