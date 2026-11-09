@@ -60,7 +60,7 @@ fun AskDhalamInput(
                 }
             }
         }
-        Text(trText("Sending shares your question and selected scan facts with your backend and Google Gemini."),
+        Text(trText("Camera app questions use your local scan. Other questions share your question and selected scan facts with your backend and Google Gemini."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 4.dp))
     }

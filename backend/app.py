@@ -1,5 +1,6 @@
 """Dhalam backend: Gemini triage and evidence-grounded Android compatibility API."""
 from contextlib import asynccontextmanager
+import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
@@ -272,13 +273,16 @@ def create_app(settings: Settings | None = None, transport=None,
             from .triage.gemini_service import get_client
             from google.genai import types
             try:
-                async with get_client().aio as client:
-                    response = await client.models.generate_content(
-                        model=settings.model, contents=json.dumps(payload.model_dump()),
-                        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT,
-                            response_mime_type="application/json", response_schema=Insight,
-                            temperature=0.1, max_output_tokens=4096))
+                async with asyncio.timeout(50):
+                    async with get_client().aio as client:
+                        response = await client.models.generate_content(
+                            model=settings.model, contents=json.dumps(payload.model_dump()),
+                            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT,
+                                response_mime_type="application/json", response_schema=Insight,
+                                temperature=0.1, max_output_tokens=2048))
                 return validate_insight(response.text or "", ids)
+            except TimeoutError:
+                raise HTTPException(504, "Google AI timed out. Try again.") from None
             except Exception as error:
                 logger.warning("Gemini evidence analysis failed: %s", type(error).__name__)
                 raise HTTPException(502, "Google AI could not complete the assessment. Try again.") from None

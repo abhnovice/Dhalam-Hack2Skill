@@ -184,6 +184,10 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         job = viewModelScope.launch {
             try {
                 val facts = withContext(Dispatchers.IO) { SecurityStore.repository(getApplication()).all() }
+                localAskAnswer(question, facts, requireNotNull(snapshot))?.let {
+                    state = state.copy(loading = false, result = it)
+                    return@launch
+                }
                 val result = withGoogleSession(refreshIdentity) { AskBackend().ask(it, question, facts, requireNotNull(snapshot)) }
                 state = state.copy(loading = false, result = result)
             } catch (error: CancellationException) {
