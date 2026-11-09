@@ -10,6 +10,15 @@ consented synthetic `CHECK` received an AI assessment from the test number.
 The test number is for approved testers, not a public launch. Cloud Run, Secret Manager,
 and Gemini usage may consume Google Cloud credits or incur charges.
 
+**Current demo status (9 November 2026):** A second tester completed the Meta
+test-number setup. Dhalam's hosted sender allowlist now contains two approved
+numbers. `--setup-whatsapp` deployed that list to Cloud Run revision
+`dhalam-api-00013-gjr`, serving all traffic at the time of the update. The
+private phone numbers and Meta credentials remain in the ignored
+`backend/.env` and Google Secret Manager; they are not in Git. A successful
+Meta registration and deployment do not, by themselves, confirm that a reply
+reached the second phone, so test with a fresh `hello` from that phone.
+
 ## 1. Create the Meta test channel
 
 1. Open [Meta for Developers](https://developers.facebook.com/apps/) and create

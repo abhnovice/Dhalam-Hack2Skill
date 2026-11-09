@@ -46,6 +46,8 @@ received Dhalam replies through Meta's test number. This is a limited developer
 demo; the temporary Meta access token will need rotation when it expires. To
 invite a friend, verify their number in Meta's test recipients and add it to
 the backend sender allowlist before updating Cloud Run.
+As of 9 November 2026, two test senders are configured on Cloud Run; use a
+fresh `hello` from each phone to confirm delivery after a credential change.
 
 The translate menu changes the full Flutter or native Android interface between
 English, Hindi, Marathi, Bengali, Tamil and Telugu. Each client keeps one shared
