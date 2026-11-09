@@ -31,7 +31,7 @@ Flutter needs a Google sign-in flow before it can call hosted AI.
 
 | Platform | Build Artifact | Purpose |
 | --- | --- | --- |
-| **Native Android** | [`dhalam-native-android.apk`](build/apks/dhalam-native-android.apk) | Version 1.0.1 (code 2) debug APK with the configured Web OAuth client, Credential Manager Google Sign-In, biometric unlock fallback, logout, and permission-grounded AskDhalam. |
+| **Native Android** | [`dhalam-native-android.apk`](build/apks/dhalam-native-android.apk) | Version 1.0.2 (code 3) debug APK with the configured Web OAuth client, Credential Manager Google Sign-In, biometric unlock fallback, logout, and permission-grounded AskDhalam. |
 
 - **Flutter**: Opens directly into scam triage: paste a message or choose a photo, tap **Check**, and confirm consent. A structured assessment and action appear in a visual card; **Why? Show details** displays evidence, official RBI reference citations, and incident report export.
 - **Native Android**: Features **Scam check** (Gemini threat triage with photo/text input and reference citations) and **AskDhalam** (permission-grounded device QA). Supports Google OAuth sign-in via Android Credential Manager, biometric unlock, and logout on all tabs.
@@ -86,6 +86,10 @@ flutter run
 Native Android alternative: open the repository root in Android Studio, or use
 `./gradlew :app:assembleDebug` with the project's required full JDK. It is not
 necessary to build the native alternative to run Flutter.
+For a shareable native APK, run `python3 tools/build_native_demo.py`. It reads
+the Web OAuth client ID from ignored `backend/.env`, validates the packaged
+value, and updates `build/apks/dhalam-native-android.apk`. No Gradle file edit
+is needed.
 
 ## Verification and deployment
 

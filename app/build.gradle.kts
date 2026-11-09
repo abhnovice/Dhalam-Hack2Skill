@@ -6,11 +6,24 @@ plugins {
 }
 
 val googleWebClientId = providers.gradleProperty("DHALAM_GOOGLE_WEB_CLIENT_ID")
-    .orElse(providers.environmentVariable("DHALAM_GOOGLE_WEB_CLIENT_ID")).orElse("")
+    .orElse(providers.environmentVariable("DHALAM_GOOGLE_WEB_CLIENT_ID"))
+    .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
+    .orElse("")
 val backendUrl = providers.gradleProperty("DHALAM_BACKEND_URL")
     .orElse(providers.environmentVariable("DHALAM_BACKEND_URL")).orElse("")
 fun configString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
     .replace("\n", "\\n").replace("\r", "\\r") + "\""
+
+val resolvedGoogleWebClientId = googleWebClientId.get()
+require(resolvedGoogleWebClientId.isEmpty() ||
+    resolvedGoogleWebClientId.endsWith(".apps.googleusercontent.com")) {
+    "DHALAM_GOOGLE_WEB_CLIENT_ID must be a Web OAuth client ID."
+}
+if (providers.gradleProperty("DHALAM_REQUIRE_GOOGLE_SIGNIN").map(String::toBoolean).orElse(false).get()) {
+    require(resolvedGoogleWebClientId.isNotEmpty()) {
+        "Set DHALAM_GOOGLE_WEB_CLIENT_ID before building the shared demo APK."
+    }
+}
 
 android {
     namespace = "com.dhalam.ap"
@@ -22,10 +35,10 @@ android {
         applicationId = "com.dhalam.ap"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
         // Public developer configuration only. No API keys or shared passwords in the APK.
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", configString(googleWebClientId.get()))
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", configString(resolvedGoogleWebClientId))
         buildConfigField("String", "ASK_BACKEND_URL", configString(backendUrl.get()))
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

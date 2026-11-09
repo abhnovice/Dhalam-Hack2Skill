@@ -41,8 +41,8 @@ trusted. `flutter devices` lists the id to use below.
 ## Make sure you are running the current version
 
 Starting the emulator does **not** update the apps on it. It keeps whatever was
-installed last. The native Android demo APK is version `1.0.1` (code `2`);
-older native APKs report `1.0` (code `1`). Always install explicitly with one
+installed last. The native Android demo APK is version `1.0.2` (code `3`);
+older native APKs report `1.0` or `1.0.1`. Always install explicitly with one
 of these commands.
 
 **For the hosted demo, build and install native Android from source:**
@@ -71,7 +71,7 @@ signature error, uninstall `com.dhalam.ap` and install again; uninstalling
 clears that app's local data.
 
 After installing the native APK on a phone, open **Android Settings → Apps →
-Dhalam** and check that the version is `1.0.1`. If Google sign-in still says
+Dhalam** and check that the version is `1.0.2`. If Google sign-in still says
 the OAuth Web client ID is missing, the phone has a different APK installed.
 Share the file in `build/apks/dhalam-native-android.apk` from this repository;
 renaming or forwarding an earlier copy does not update its contents.
@@ -209,7 +209,7 @@ Notes:
 ## Install the current native APK (no build)
 
 The native build in [`build/apks/`](build/apks) was rebuilt on 9 November 2026
-with OAuth configured, version `1.0.1` (code `2`), and Android debug signing.
+with OAuth configured, version `1.0.2` (code `3`), and Android debug signing.
 The backend test suite has 66 passing tests; earlier runs had 30 Flutter and
 34 native JVM tests:
 
@@ -221,6 +221,10 @@ The native APK points at the hosted Cloud Run backend. The hosted service
 requires a verified Google ID token from an allowed account for AI requests;
 Flutter AI checks still need a local backend. Build Flutter from source for
 Android or iOS; no Flutter package is retained in `build/apks/`.
+To refresh the shareable native APK, run `python3 tools/build_native_demo.py`
+from the repository root. The script reads the quoted or unquoted Web OAuth
+client ID from ignored `backend/.env`, checks the value in the built APK, and
+prints its SHA-256 digest. You do not need to edit `gradle.properties`.
 Voice input and read-aloud have automated fake-based coverage; real-device
 speech data remains to be checked.
 

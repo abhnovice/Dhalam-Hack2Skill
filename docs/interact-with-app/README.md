@@ -11,6 +11,8 @@ The native Android APK was rebuilt on 9 November 2026 with six-language screen
 translations, voice controls, Noto Sans and a configured Web OAuth client. It is
 signed with the Android debug key for demo installation. Build Flutter from
 source on Android or iOS; iOS device installation requires Apple signing.
+Rebuild the shareable native APK with `python3 tools/build_native_demo.py` from
+the repository root; it validates the OAuth client ID before updating the file.
 Cloud Run was deployed in mobile-auth mode on 9 November 2026. Its health endpoint
 is public, but AI requests require a verified Google ID token from an allowed
 account. The current native emulator debug build points to this hosted URL.
