@@ -22,8 +22,8 @@ android {
         applicationId = "com.dhalam.ap"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
         // Public developer configuration only. No API keys or shared passwords in the APK.
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", configString(googleWebClientId.get()))
         buildConfigField("String", "ASK_BACKEND_URL", configString(backendUrl.get()))

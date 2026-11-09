@@ -27,7 +27,7 @@ Paths below are relative to this repository.
 | `backend/` | FastAPI service, native `/ask` contract, scam triage, Gemini integration, retrieval, and tests |
 | `ml/` | Synthetic-data exploration; not a trained production classifier |
 | `docs/interact-with-app/` | Demo instructions, sample content, and screenshots |
-| `build/apks/` | Previously prepared distributable artifacts; not automatically refreshed by debug builds |
+| `build/apks/` | Current native Android demo APK; not automatically refreshed by debug builds |
 
 Generated desktop/web Flutter targets do not establish security-scanner support on those platforms.
 
@@ -110,7 +110,7 @@ Current debug outputs:
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `flutter/build/app/outputs/flutter-apk/app-debug.apk`
 
-The Android packages in `build/apks/` contain the current interface. The iOS `.ipa` predates the voice and language work and needs an Apple signing identity for a current device build. See [demo instructions](interact-with-app/README.md) and [Flutter setup](../flutter/README.md).
+Only the current native Android demo APK remains in `build/apks/`. Build Flutter Android and iOS from source; iOS device installation needs an Apple signing identity. See [demo instructions](interact-with-app/README.md) and [Flutter setup](../flutter/README.md).
 
 ## 7. Remaining work
 

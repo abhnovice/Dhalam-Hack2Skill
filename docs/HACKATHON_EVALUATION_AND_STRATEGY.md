@@ -9,6 +9,8 @@
 > do not yet support the hosted Google authentication mode. The direct Meta
 > WhatsApp bot works for approved test senders; see
 > [the WhatsApp guide](interact-with-app/whatsapp-bot.md).
+> The three-package inventory below is historical. The repository now keeps
+> only the current native Android APK in `build/apks/`; build Flutter from source.
 
 **Hackathon:** Startup Buildathon India 2026 (Google AI, Google Cloud & Hack2skill)
 **Team:** Ladydebuggers (Anusha Jain & Abhyudaya Marya)
@@ -385,7 +387,7 @@ Nov 13 (Fri) ─── Day 6: Buffer & Preparation for Phase 2 City Buildathons
 * **Day 3 (Nov 10):**
   * Draft online submission answers on [startupbuildathon.com](https://startupbuildathon.com): Problem Statement, Market Size (₹1,750+ Cr loss, 800M+ mobile banking users), Architecture, and Google AI/Cloud stack.
 * **Day 4 (Nov 11):**
-  * Conduct physical device testing on Android hardware using `build/apks/dhalam-flutter-android.apk` connected to live Cloud Run. Verify biometric unlock fallback and latency.
+  * Conduct physical device testing on Android hardware using `build/apks/dhalam-native-android.apk` connected to live Cloud Run. Verify Google sign-in, biometric unlock and latency; build Flutter from source for its local-backend demo.
 * **Day 5 (Nov 12):**
   * Submit the application 24 hours ahead of the deadline to avoid portal congestion.
 * **Day 6 (Nov 13):**

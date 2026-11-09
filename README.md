@@ -22,18 +22,16 @@ between the two clients. Keep the original client while validating the migration
 future consolidation can extract shared Kotlin logic after behavior is compared.
 Do not delete `flutter/android/` or merge its manifest into root `app/`.
 
-## Try the app and prebuilt packages
+## Try the current Android APK
 
-Three packages are available in [`build/apks/`](build/apks). The native and
-Flutter Android APKs are rebuilt from current source for the demo. Native
-hosted AI requires the registered Android OAuth client and an allowed Google
-account; Flutter needs a Google sign-in flow before it can call hosted AI.
+Only the current native Android demo APK is kept in [`build/apks/`](build/apks).
+It includes the registered Web OAuth client and requires an allowed Google
+account for hosted AI. Build Flutter Android or iOS from source when needed;
+Flutter needs a Google sign-in flow before it can call hosted AI.
 
 | Platform | Build Artifact | Purpose |
 | --- | --- | --- |
-| **Native Android** | [`dhalam-native-android.apk`](build/apks/dhalam-native-android.apk) | Native Android/Compose app with Credential Manager Google Sign-In, biometric unlock fallback, logout, and permission-grounded AskDhalam. |
-| **Flutter Android** | [`dhalam-flutter-android.apk`](build/apks/dhalam-flutter-android.apk) | Flutter Android demo APK; Cloud Run AI requests require authentication this client does not send. |
-| **Flutter iOS** | [`dhalam-flutter-ios.ipa`](build/apks/dhalam-flutter-ios.ipa) | Older device archive; build from current source with Apple signing for voice and languages. |
+| **Native Android** | [`dhalam-native-android.apk`](build/apks/dhalam-native-android.apk) | Version 1.0.1 (code 2) debug APK with the configured Web OAuth client, Credential Manager Google Sign-In, biometric unlock fallback, logout, and permission-grounded AskDhalam. |
 
 - **Flutter**: Opens directly into scam triage: paste a message or choose a photo, tap **Check**, and confirm consent. A structured assessment and action appear in a visual card; **Why? Show details** displays evidence, official RBI reference citations, and incident report export.
 - **Native Android**: Features **Scam check** (Gemini threat triage with photo/text input and reference citations) and **AskDhalam** (permission-grounded device QA). Supports Google OAuth sign-in via Android Credential Manager, biometric unlock, and logout on all tabs.
@@ -158,7 +156,7 @@ the index. See [build and deployment instructions](backend/README.md#reference-b
 ## Share progress safely
 
 `backend/.env`, credential JSON, signing keys and local caches are ignored.
-Demo APKs in `build/apks/` are tracked; review them before committing. Review
+The native demo APK in `build/apks/` is tracked; review it before committing. Review
 `git status --short` and `git diff --stat` before committing.
 IDE metadata and the generated ObjectBox schema backup have been removed from
 Git tracking; existing local copies are preserved. Their staged removals are part

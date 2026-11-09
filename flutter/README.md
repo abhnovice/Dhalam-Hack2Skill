@@ -51,9 +51,10 @@ unenrolled biometrics, temporary biometric lockout, and notification permission
 allowed/denied. Return from Settings and verify notification status refreshes;
 device observations refresh after returning from a Settings shortcut opened inside Dhalam. Use Run security check after other changes.
 
-The Android release APK was rebuilt on 9 November 2026 and signed with the
-Android debug key for demo use. The iOS `.ipa` predates the voice and language
-changes. A current device package requires Apple signing and physical-device checks.
+The Android release APK was successfully built on 9 November 2026, but it is
+not retained in `build/apks/`; rebuild from source when needed. No current iOS
+device archive is retained. An iOS device package requires Apple signing and
+physical-device checks.
 
 ## Security tools
 
@@ -104,12 +105,12 @@ six submissions); earlier images are not resent. New chat clears the in-memory
 conversation. Submissions are not saved in the local journal.
 Device inventories are never included in Flutter cloud requests.
 
-The prebuilt release packages point to Cloud Run
+Flutter can point to Cloud Run
 (`https://dhalam-api-xxpghctsqq-el.a.run.app`), but hosted AI calls return 401
 because Flutter does not yet send the required Google ID token. For an AI demo,
-run a local backend and use the debug build as described in
-[the interaction guide](../docs/interact-with-app/README.md).
-Prebuilt artifacts are in `../build/apks/dhalam-flutter-android.apk` and `../build/apks/dhalam-flutter-ios.ipa`.
+run a local backend and build from source as described in
+[the interaction guide](../docs/interact-with-app/README.md). The repository
+retains only the current native Android APK in `../build/apks/`.
 
 Results distinguish the uncalibrated AI concern score, extracted evidence,
 actions, and actual URL reputation status. A model cannot authenticate a legal
@@ -137,7 +138,7 @@ Sensitive-permission filtering is a review aid, not a malware classification.
   transitions and event/poll ordering, opt-in background controls, and
   identity-preserving journal comparisons.
 - `flutter analyze` is clean and all 30 Flutter tests passed on 9 November 2026.
-- Android release APK rebuilt on 9 November 2026; the iOS device archive is stale.
+- Android release APK built on 9 November 2026; rebuild from source when needed. No current iOS device archive is retained.
 - iOS minimum deployment target is 15.0 to match the installed Xcode 27 toolchain.
 - Physical camera/gallery, capture callbacks, Settings return and sharing still
   need testing on real Android and iOS devices. An unsigned iOS build is not installable.

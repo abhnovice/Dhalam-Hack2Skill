@@ -1,17 +1,16 @@
 # Test Dhalam on Android, iOS, or Emulator
 
-Dhalam has three demo packages in [`build/apks/`](../../build/apks). Native
-Android supports hosted Google authentication when its signing key matches the
-registered Android OAuth client. Flutter still needs a local backend for AI:
+Dhalam keeps one current demo package in [`build/apks/`](../../build/apks).
+Native Android supports hosted Google authentication when its signing key
+matches the registered Android OAuth client. Flutter is built from source and
+still needs a local backend for AI:
 
 - [`dhalam-native-android.apk`](../../build/apks/dhalam-native-android.apk) — Native Android / Jetpack Compose application (`com.dhalam.ap`)
-- [`dhalam-flutter-android.apk`](../../build/apks/dhalam-flutter-android.apk) — Flutter Android release application (`com.dhalam.dhalam`)
-- [`dhalam-flutter-ios.ipa`](../../build/apks/dhalam-flutter-ios.ipa) — Flutter iOS device archive
 
-The Android APKs were rebuilt on 9 November 2026 with six-language screen
-translations, voice controls and Noto Sans. Both are signed with the Android
-debug key for demo installation. The iOS archive predates those changes; run
-Flutter from source on iOS until a current Apple-signed archive is produced.
+The native Android APK was rebuilt on 9 November 2026 with six-language screen
+translations, voice controls, Noto Sans and a configured Web OAuth client. It is
+signed with the Android debug key for demo installation. Build Flutter from
+source on Android or iOS; iOS device installation requires Apple signing.
 Cloud Run was deployed in mobile-auth mode on 9 November 2026. Its health endpoint
 is public, but AI requests require a verified Google ID token from an allowed
 account. The current native emulator debug build points to this hosted URL.

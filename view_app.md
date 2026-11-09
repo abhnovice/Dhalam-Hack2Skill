@@ -41,8 +41,9 @@ trusted. `flutter devices` lists the id to use below.
 ## Make sure you are running the current version
 
 Starting the emulator does **not** update the apps on it. It keeps whatever was
-installed last, and both apps report `1.0` / `1.0.0` either way, so the version
-number cannot tell old from new. Always install explicitly with one of these.
+installed last. The native Android demo APK is version `1.0.1` (code `2`);
+older native APKs report `1.0` (code `1`). Always install explicitly with one
+of these commands.
 
 **For the hosted demo, build and install native Android from source:**
 
@@ -57,19 +58,23 @@ pass `-PDHALAM_GOOGLE_WEB_CLIENT_ID=<client ID>` when building. Google sign-in
 and one synthetic scam check succeeded on the
 API 36 emulator on 9 November 2026. The emulator has no fingerprint enrolled.
 
-The demo APKs can also be installed directly. Use the native APK for hosted AI;
-Flutter still needs the local backend for AI checks:
+The current native APK can also be installed directly for hosted AI. Build
+Flutter from source and use a local backend for Flutter AI checks:
 
 ```bash
 adb install -r build/apks/dhalam-native-android.apk
-adb install -r build/apks/dhalam-flutter-android.apk
 ```
 
-`-r` replaces the installed app and keeps its data. Both prebuilt APKs and a
-debug build use the same signing key, so they replace each other without an
-uninstall. If Android still refuses with a signature error, run
-`adb uninstall com.dhalam.ap` (native) or `adb uninstall com.dhalam.dhalam`
-(Flutter) and install again.
+`-r` replaces the installed native app and keeps its data. The repository APK
+and the native debug build use the same signing key. If Android refuses with a
+signature error, uninstall `com.dhalam.ap` and install again; uninstalling
+clears that app's local data.
+
+After installing the native APK on a phone, open **Android Settings → Apps →
+Dhalam** and check that the version is `1.0.1`. If Google sign-in still says
+the OAuth Web client ID is missing, the phone has a different APK installed.
+Share the file in `build/apks/dhalam-native-android.apk` from this repository;
+renaming or forwarding an earlier copy does not update its contents.
 
 `flutter run` and `./gradlew :app:installDebug` rebuild their respective clients.
 
@@ -201,27 +206,21 @@ Notes:
 
 ---
 
-## Install the rebuilt Android packages (no build)
+## Install the current native APK (no build)
 
-The Android builds in [`build/apks/`](build/apks) were rebuilt on 9 November
-2026 from the current native and Flutter source. The backend test suite has 66
-passing tests; earlier runs had 30 Flutter and 34 native JVM tests. Both APKs
-use the Android debug signing configuration for demo installation:
+The native build in [`build/apks/`](build/apks) was rebuilt on 9 November 2026
+with OAuth configured, version `1.0.1` (code `2`), and Android debug signing.
+The backend test suite has 66 passing tests; earlier runs had 30 Flutter and
+34 native JVM tests:
 
 ```bash
 adb install -r build/apks/dhalam-native-android.apk
-adb install -r build/apks/dhalam-flutter-android.apk
 ```
 
-| Package | Status |
-| --- | --- |
-| `dhalam-native-android.apk` | Current debug build with hosted OAuth configuration and temporary developer sign-in. Google sign-in needs the matching Android OAuth signing key. |
-| `dhalam-flutter-android.apk` | Current Flutter release build; lacks Google ID token sign-in for hosted AI. |
-| `dhalam-flutter-ios.ipa` | **Out of date.** Built before these changes; it has no voice, languages, new fonts or icons. Run the iOS app from source with `flutter run` (section 2) to see the current version. |
-
-Both Android packages point at the hosted Cloud Run backend. The hosted service
+The native APK points at the hosted Cloud Run backend. The hosted service
 requires a verified Google ID token from an allowed account for AI requests;
-use the native APK for that demo. Flutter AI checks still need a local backend.
+Flutter AI checks still need a local backend. Build Flutter from source for
+Android or iOS; no Flutter package is retained in `build/apks/`.
 Voice input and read-aloud have automated fake-based coverage; real-device
 speech data remains to be checked.
 
