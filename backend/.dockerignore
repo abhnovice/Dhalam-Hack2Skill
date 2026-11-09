@@ -3,6 +3,9 @@
 !requirements.txt
 !__init__.py
 !app.py
+!accessibility_report.py
+!device_report.py
+!whatsapp.py
 !triage/
 !triage/*.py
 !triage/references.json

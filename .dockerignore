@@ -1,0 +1,18 @@
+# Allow only backend runtime files into the repository-root build context.
+**
+!Dockerfile
+!backend/
+!backend/requirements.txt
+!backend/__init__.py
+!backend/app.py
+!backend/accessibility_report.py
+!backend/device_report.py
+!backend/whatsapp.py
+!backend/triage/
+!backend/triage/*.py
+!backend/triage/references.json
+!backend/triage/references.sqlite3
+# Credentials must never enter a build context.
+**/.env
+**/.env.*
+**/__pycache__/
