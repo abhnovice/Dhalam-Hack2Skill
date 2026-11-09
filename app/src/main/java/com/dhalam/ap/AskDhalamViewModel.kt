@@ -22,6 +22,8 @@ internal object AppSessionAccess {
     @Volatile var signedIn = false
 }
 
+data class AskChatTurn(val question: String, val result: AskResult)
+
 data class AskUiState(
     val question: String = "",
     val loading: Boolean = false,
@@ -35,7 +37,8 @@ data class AskUiState(
     val accountLabel: String? = null,
     val error: String? = null,
     val result: AskResult? = null,
-    val submittedQuestion: String? = null
+    val submittedQuestion: String? = null,
+    val conversation: List<AskChatTurn> = emptyList()
 )
 
 class AskDhalamViewModel(application: Application) : AndroidViewModel(application) {
@@ -167,6 +170,9 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    suspend fun accessibilityReport(snapshot: SecurityObservation, refreshIdentity: suspend () -> Pair<String, String>): String =
+        withGoogleSession(refreshIdentity) { requestAccessibilityReport(it, snapshot) }
+
     suspend fun analyzeTriage(payload: org.json.JSONObject, refreshIdentity: suspend () -> Pair<String, String>): org.json.JSONObject =
         withGoogleSession(refreshIdentity) { submitTriage(it.url, it.idToken.orEmpty(), payload) }
 
@@ -185,7 +191,8 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val facts = withContext(Dispatchers.IO) { SecurityStore.repository(getApplication()).all() }
                 val result = withGoogleSession(refreshIdentity) { AskBackend().ask(it, question, facts, requireNotNull(snapshot)) }
-                state = state.copy(loading = false, result = result)
+                state = state.copy(loading = false, result = result, question = "",
+                    conversation = (state.conversation + AskChatTurn(question, result)).takeLast(8))
             } catch (error: CancellationException) {
                 throw error
             } catch (_: AskSignInRequiredException) {
@@ -208,7 +215,7 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
         job?.cancel()
         job = null
         state = state.copy(question = "", loading = false, signingIn = false, error = null,
-            result = null, submittedQuestion = null)
+            result = null, submittedQuestion = null, conversation = emptyList())
     }
 
     fun signOut() {

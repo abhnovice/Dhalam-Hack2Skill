@@ -1,6 +1,15 @@
 package com.dhalam.ap
 
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -94,15 +103,22 @@ fun SecurityDashboard(
     onClearAsk: () -> Unit,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onAccessReport: suspend (SecurityObservation) -> String = { error("Accessibility report is not configured.") },
     captureStatus: String = "Unavailable",
-    onAnalyze: suspend (org.json.JSONObject) -> org.json.JSONObject = { submitTriage(BuildConfig.ASK_BACKEND_URL, "", it) }
+    onAnalyze: suspend (org.json.JSONObject) -> org.json.JSONObject = { submitTriage(BuildConfig.ASK_BACKEND_URL, "", it) },
+    captureObservation: CaptureObservation = CaptureObservation(recording = captureStatus)
 ) {
+    val sectionState = rememberSaveableStateHolder()
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
+    val pagerState = rememberPagerState(initialPage = DashboardTab.valueOf(selectedTab).ordinal,
+        pageCount = { DashboardTab.values().size })
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collectLatest { selectedTab = DashboardTab.values()[it].name }
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var permissionMenuOpen by remember { mutableStateOf(false) }
     var askOpen by rememberSaveable { mutableStateOf(false) }
     var accountOpen by remember { mutableStateOf(false) }
-    var captureOpen by remember { mutableStateOf(false) }
 
     var showExports by rememberSaveable { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
@@ -140,7 +156,7 @@ fun SecurityDashboard(
         }
     }
 
-    val tab = DashboardTab.valueOf(selectedTab)
+    val tab = DashboardTab.values()[pagerState.currentPage]
     val inventory = observation?.permissionInventory
     val services = observation?.services
     val search = query.trim()
@@ -242,7 +258,8 @@ fun SecurityDashboard(
                                 NavigationBarItem(
                                     colors = NavigationBarItemDefaults.colors(selectedTextColor = colors.primary, selectedIconColor = colors.primary, indicatorColor = colors.secondaryContainer, unselectedTextColor = colors.onSurfaceVariant),
                                     selected = tab == destination,
-                                    onClick = { selectedTab = destination.name },
+                                    onClick = { scope.launch { pagerState.animateScrollToPage(destination.ordinal,
+                                        animationSpec = tween(340, easing = FastOutSlowInEasing)) } },
                                     icon = {
                                         Icon(
                                             painter = painterResource(destination.iconRes),
@@ -297,74 +314,77 @@ fun SecurityDashboard(
                         }
                     }
                 }
-                if (captureStatus == "Active") {
+                if (captureObservation.recording == "Active") {
                     Surface(color = colors.errorContainer, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text(trText("Coercion Shield · screen capture active"), style = MaterialTheme.typography.titleMedium)
-                            Text(trText("Pause before viewing private information. Stop sharing using Android or the sharing app. Dhalam cannot disconnect another app’s session."))
+                            Text(trText("Recording Dhalam. Stop sharing before viewing private data."))
                             if (observation?.services?.isNotEmpty() == true) {
-                                Text(trText("Accessibility access was also enabled at the last check. Both signals can be legitimate; they do not prove fraud."))
+                                Text(trText("Accessibility services are also enabled. Review if unfamiliar."))
                             }
                         }
                     }
                 }
 
-                if (tab == DashboardTab.Triage) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds().testTag("dashboard-pager")
+                ) { page ->
+                    val displayedTab = DashboardTab.values()[page]
+                    sectionState.SaveableStateProvider(displayedTab.name) {
+                        Column(Modifier.fillMaxSize()) {
+                if (displayedTab == DashboardTab.Triage) {
                     ScamTriagePanel(Modifier.weight(1f), onAnalyze, onSignIn)
-                } else key(tab) {
+                } else if (displayedTab == DashboardTab.Access) {
+                    AccessOverview(observation, scanning, scanError, onOpenAccessibility, onAccessReport, Modifier.weight(1f))
+                } else key(displayedTab) {
                     val listState = rememberLazyListState()
                     LaunchedEffect(askState.loading, askState.result, askState.error) {
                         if (askState.loading || askState.result != null || askState.error != null) {
+                            if (displayedTab == DashboardTab.Permissions) askOpen = true
                             listState.animateScrollToItem(0)
                         }
                     }
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        modifier = Modifier.fillMaxWidth().weight(1f).testTag("dashboard-list:${displayedTab.name}"),
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        if (tab == DashboardTab.Permissions &&
-                            (askState.loading || askState.error != null || askState.result != null)) {
-                            item("ask_answer") {
-                                AskAnswerPanel(askState, observation?.observedAt, onAsk)
-                            }
-                        }
                         if (scanError != null) {
                             item("scan_error") { Text(trText(scanError), color = colors.error) }
                         }
 
-                        if (tab == DashboardTab.Developer) item("capture_awareness") {
-                            TextButton(onClick = { captureOpen = !captureOpen }) {
-                                Text(tr("Screen capture · {status}", mapOf("status" to trText(captureStatus))) + "  ${if (captureOpen) "−" else "+"}")
-                            }
-                            if (captureOpen) Caption("Supported detection while Dhalam is visible only. Does not detect every recording method or captures of other apps.")
-                        }
-                        when (tab) {
+                        when (displayedTab) {
                             DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel(analyze = onAnalyze, onSignIn = onSignIn) }
-                            DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
+                            DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt, captureObservation) }
                             DashboardTab.Permissions -> {
+                                item("device_chat") {
+                                    OutlinedCard(onClick = { askOpen = !askOpen },
+                                        modifier = Modifier.fillMaxWidth().testTag("device-chat-toggle"),
+                                        colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
+                                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Image(painterResource(R.drawable.dhalam_logo_transparent), null, Modifier.size(36.dp))
+                                            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Text(trText("Ask Dhalam"), style = MaterialTheme.typography.titleMedium, color = colors.primary)
+                                                Caption("Apps & permissions")
+                                            }
+                                            Text(if (askOpen) "−" else "+", style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                                        }
+                                    }
+                                    SlidePushVisibility(visible = askOpen) {
+                                        DeviceChat(askState, scanning, observation?.observedAt,
+                                            onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
+                                    }
+                                }
                                 item("permission_heading") {
                                     Column(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(trText("Device access"), style = MaterialTheme.typography.headlineSmall)
-                                        Caption("Understand which apps have sensitive access.")
+                                        Caption("Review sensitive access.")
                                     }
                                 }
                                 if (inventory != null && search.isEmpty()) item("permission_chart") {
                                     SensitivePermissionChart(inventory) { query = it }
-                                }
-                                item("device_chat") {
-                                    OutlinedCard(onClick = { askOpen = !askOpen }, modifier = Modifier.fillMaxWidth(),
-                                        colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
-                                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Text(trText("Ask Dhalam"), style = MaterialTheme.typography.titleMedium, color = colors.primary)
-                                                Caption("Ask about your apps and permissions")
-                                            }
-                                            Text(trText(if (askOpen) "−" else "+"), style = MaterialTheme.typography.titleLarge, color = colors.primary)
-                                        }
-                                    }
-                                    if (askOpen) AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
                                 }
                                 item("permission_search") {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -400,65 +420,17 @@ fun SecurityDashboard(
                                 }
                             }
 
-                            DashboardTab.Access -> {
-                                item("access_summary") {
-                                    Panel(accent = true) {
-                                        Heading("Accessibility access")
-                                        Text(
-                                            trText(when {
-                                                services == null -> "Enabled service list unavailable"
-                                                services.isEmpty() -> "No enabled services reported"
-                                                else -> "${services.size} enabled services reported"
-                                            })
-                                        )
-                                        TextButton(onClick = onOpenAccessibility) {
-                                            Text(trText("Open Accessibility settings"))
-                                        }
-                                    }
-                                }
-                                items(services.orEmpty()) { service -> ServiceRow(service) }
-                            }
+                            DashboardTab.Access -> Unit // Dedicated accessibility overview above.
 
-                            DashboardTab.Developer -> {
-                                item("device_security") {
-                                    Panel {
-                                        Heading("Device security")
-                                        Caption("Configuration and availability checks, not passcode strength or proof of device safety.")
-                                        observation?.deviceSignals.orEmpty().forEach { signal ->
-                                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                                Text(trText(signal.label))
-                                                Caption(signal.status)
-                                            }
-                                        }
-                                    }
-                                }
-                                item("developer_summary") {
-                                    Panel {
-                                        Heading("Developer tools")
-                                        Caption("Confirm restricted debugging switches in Android Settings.")
-                                        observation?.developerSignals.orEmpty().forEach { signal ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                            ) {
-                                                Text(trText(signal.label), modifier = Modifier.weight(1f))
-                                                Caption(signal.status)
-                                            }
-                                        }
-                                        TextButton(onClick = onOpenDeveloperOptions) {
-                                            Text(trText("Open Developer options"))
-                                        }
-                                    }
-                                }
+                            DashboardTab.Developer -> item("settings_overview") {
+                                DeviceSettingsPanel(observation, captureObservation, notificationsEnabled,
+                                    onOpenDeveloperOptions, onEnableAlerts)
                             }
                         }
 
-                        if (!notificationsEnabled && tab == DashboardTab.Developer) {
-                            item("quiet_alerts") {
-                                TextButton(onClick = onEnableAlerts) {
-                                    Text(trText("Enable quiet alerts"))
-                                }
-                            }
+
+                    }
+                }
                         }
                     }
                 }
@@ -500,9 +472,14 @@ private fun PermissionRow(report: PermissionReport, search: String) {
                     false -> "Not granted"
                     null -> "Unknown"
                 }
-                Column(Modifier.padding(top = 4.dp)) {
-                    Text("${app.label} · ${trText(status)}")
-                    Caption(app.packageName)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    InstalledAppIcon(app.packageName, Modifier.size(40.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("${app.label} · ${trText(status)}")
+                        Caption(app.packageName)
+                    }
                 }
             }
         }

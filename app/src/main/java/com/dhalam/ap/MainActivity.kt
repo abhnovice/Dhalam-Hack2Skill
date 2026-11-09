@@ -58,7 +58,11 @@ class MainActivity : FragmentActivity() {
         else askViewModel.showError("Local network access was denied. Allow Nearby devices in App settings, then retry.")
     }
     private val captureStatus = mutableStateOf("Unavailable")
-    private val capture by lazy { CaptureMonitor(this) { captureStatus.value = it } }
+    private val captureObservation = mutableStateOf(CaptureObservation())
+    private val capture by lazy { CaptureMonitor(this) {
+        captureObservation.value = it
+        captureStatus.value = it.recording
+    } }
     override fun onStart() { super.onStart(); capture.start() }
     override fun onStop() { capture.stop(); super.onStop() }
 
@@ -124,6 +128,7 @@ class MainActivity : FragmentActivity() {
                     openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 },
                 captureStatus = captureStatus.value,
+                captureObservation = captureObservation.value,
                 onOpenDeveloperOptions = {
                     openSettings(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
                 },
@@ -133,6 +138,7 @@ class MainActivity : FragmentActivity() {
                 onClearAsk = askViewModel::clear,
                 onSignIn = ::signInWithGoogle,
                 onSignOut = ::signOutGoogle,
+                onAccessReport = { snapshot -> askViewModel.accessibilityReport(snapshot, ::refreshGoogleIdentity) },
                 onAnalyze = { payload -> askViewModel.analyzeTriage(payload, ::refreshGoogleIdentity) }
                 )
             }

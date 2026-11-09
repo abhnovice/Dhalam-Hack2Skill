@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.AtomicFile
-import android.view.WindowManager
+import android.util.Log
 import java.io.File
 import java.util.function.Consumer
 
@@ -21,31 +21,70 @@ class ToolsStorage(context: Context) {
     }
 }
 
-class CaptureMonitor(private val activity: Activity, private val changed: (String) -> Unit) {
-    var status = "Unavailable"
+/** Android reports captures of this visible activity, not arbitrary captures of other apps. */
+class CaptureMonitor(private val activity: Activity, private val changed: (CaptureObservation) -> Unit) {
+    var observation = CaptureObservation()
         private set
-    private var registered = false
-    private val callback = Consumer<Int> { state -> update(state) }
-    private fun update(state: Int) {
-        status = if (state == WindowManager.SCREEN_RECORDING_STATE_VISIBLE) "Active" else "Inactive"
-        changed(status)
-    }
+    private var started = false
+    private var recordingCallback: Consumer<Int>? = null
+    private var screenshotCallback: Activity.ScreenCaptureCallback? = null
+    private var generation = 0
+
     fun start() {
-        if (Build.VERSION.SDK_INT >= 35 && !registered) {
+        if (started) return
+        started = true
+        val token = ++generation
+        if (Build.VERSION.SDK_INT >= 35) {
+            val listener = Consumer<Int> { state ->
+                if (started && token == generation) {
+                    observation = observation.copy(recording = recordingStatus(state))
+                    changed(observation)
+                }
+            }
             try {
-                val state = activity.windowManager.addScreenRecordingCallback(activity.mainExecutor, callback)
-                registered = true
-                update(state)
-            } catch (_: Exception) { status = "Unavailable"; changed(status) }
+                val initial = activity.windowManager.addScreenRecordingCallback(activity.mainExecutor, listener)
+                recordingCallback = listener
+                observation = observation.copy(recording = recordingStatus(initial))
+            } catch (error: RuntimeException) {
+                observation = observation.copy(recording = "Unavailable")
+                Log.w("DhalamCapture", "Recording observer unavailable: ${error.javaClass.simpleName}")
+            }
         }
+        if (Build.VERSION.SDK_INT >= 34) {
+            val listener = Activity.ScreenCaptureCallback {
+                if (started && token == generation) {
+                    observation = observation.copy(lastScreenshotAt = System.currentTimeMillis())
+                    changed(observation)
+                    Log.i("DhalamCapture", "Screenshot observed.")
+                }
+            }
+            try {
+                activity.registerScreenCaptureCallback(activity.mainExecutor, listener)
+                screenshotCallback = listener
+                observation = observation.copy(screenshotsAvailable = true)
+            } catch (error: RuntimeException) {
+                observation = observation.copy(screenshotsAvailable = false)
+                Log.w("DhalamCapture", "Screenshot observer unavailable: ${error.javaClass.simpleName}")
+            }
+        }
+        changed(observation)
     }
+
     fun stop() {
-        if (Build.VERSION.SDK_INT >= 35 && registered) {
-            try { activity.windowManager.removeScreenRecordingCallback(callback) } catch (_: Exception) { }
+        started = false
+        generation++ // Ignore callbacks queued before unregistering.
+        if (Build.VERSION.SDK_INT >= 35) recordingCallback?.let {
+            try { activity.windowManager.removeScreenRecordingCallback(it) }
+            catch (_: RuntimeException) { Log.w("DhalamCapture", "Recording observer cleanup failed.") }
         }
-        registered = false
-        status = "Unavailable"
-        changed(status)
+        if (Build.VERSION.SDK_INT >= 34) screenshotCallback?.let {
+            try { activity.unregisterScreenCaptureCallback(it) }
+            catch (_: RuntimeException) { Log.w("DhalamCapture", "Screenshot observer cleanup failed.") }
+        }
+        recordingCallback = null
+        screenshotCallback = null
+        observation = observation.copy(recording = "Unavailable", screenshotsAvailable = false)
+        changed(observation)
     }
 }
 

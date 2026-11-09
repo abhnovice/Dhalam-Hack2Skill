@@ -21,7 +21,7 @@ internal data class ChatStrings(
 )
 
 private val en = ChatStrings(
-    "Type or paste a message…", "Not sure?\nLet’s check together.", "Tell me what happened, or show me a message.",
+    "I can detect deepfakes too", "Not sure?\nLet’s check together.", "Share a message or photo.",
     "Stop. This looks risky.", "No clear scam signs.", "Pause. Let’s check first.",
     "I’m checking. Take a breath.", "Check", "Listening…", "Speak your message", "Read aloud", "Stop reading",
     "Voice is not available for this language on this phone.", "Language"

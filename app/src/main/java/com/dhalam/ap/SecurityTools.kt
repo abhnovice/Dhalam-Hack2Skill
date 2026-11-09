@@ -24,7 +24,7 @@ fun explainSecurity(title: String, detail: String): SecurityFinding {
         title == "Biometric authentication" -> if (lower.startsWith("ready")) "Configured" to "Review enrolled biometrics if you share this device."
             else "Needs attention" to "Review biometric settings. For a temporary lockout, unlock with your device passcode."
         title == "Notifications" -> (if (detail == "Permission granted") "Configured" else "Needs attention") to "Use Dhalam notification settings to manage permission."
-        title == "Screen capture" -> (if (detail == "Active") "Needs attention" else "Configured") to
+        title == "Screen capture" -> (when (detail) { "Active" -> "Needs attention"; "Inactive" -> "Configured"; else -> "Unavailable" }) to
             (if (detail == "Active") "Dhalam is visible in a recording. Stop recording or sharing before viewing private reports if unintended." else "No active capture reported for Dhalam. This does not rule out every capture method.")
         title == "Operating system" -> "Manual review" to "Open Software Update in Settings. The version alone does not establish update status."
         else -> "Manual review" to "Review the reported setting and access in system Settings. Enabled access is not proof of abuse."

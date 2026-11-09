@@ -157,6 +157,7 @@ fun ScamTriagePanel(
     var details by remember { mutableStateOf<TriageTurn?>(null) }
     var preview by remember { mutableStateOf<String?>(null) }
     var consentOpen by remember { mutableStateOf(false) }
+    var consentDetails by remember { mutableStateOf(false) }
     val dictation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val words = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (result.resultCode == Activity.RESULT_OK && !words.isNullOrBlank()) {
@@ -230,7 +231,11 @@ fun ScamTriagePanel(
     }
     if (consentOpen) AlertDialog(onDismissRequest = { consentOpen = false },
         title = { Text(trText("Send for an AI check?")) },
-        text = { Text(trText("Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first. Device checks stay on your phone. Earlier photos are not sent again. Links may be checked with Safe Browsing. Google service retention policies apply; Dhalam does not save submissions on its server.")) },
+        text = { Column {
+            Text(trText("Send this chat and photo to Dhalam’s backend and Google AI? Remove passwords and OTPs. Links may use Safe Browsing."))
+            TextButton(onClick = { consentDetails = !consentDetails }) { Text(trText("Privacy details")) }
+            SlidePushVisibility(consentDetails) { Text(trText("Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first. Device checks stay on your phone. Earlier photos are not sent again. Links may be checked with Safe Browsing. Google service retention policies apply; Dhalam does not save submissions on its server.")) }
+        } },
         confirmButton = { Button(onClick = { consentOpen = false; send() }) { Text(trText("Send for check")) } },
         dismissButton = { TextButton(onClick = { consentOpen = false }) { Text(trText("Not now")) } })
     details?.let { turn ->
@@ -322,17 +327,11 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
         androidx.compose.foundation.lazy.LazyColumn(state = scroll, modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (turns.isEmpty()) item {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp), color = colors.primaryContainer) {
-                        Icon(androidx.compose.ui.res.painterResource(R.drawable.ms_shield), contentDescription = null, modifier = Modifier.padding(24.dp).size(64.dp), tint = colors.primary)
-                    }
-                    Text(trText(t.emptyTitle), style = MaterialTheme.typography.headlineMedium,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Text(trText(t.emptySubtitle), style = MaterialTheme.typography.bodyLarge)
-                    SuggestionChip(onClick = { message = "Someone is asking me to send money. " }, label = { Text(trText("Someone wants money")) })
-                    Text(trText("No need to decide in a hurry."), color = colors.onSurfaceVariant)
-                }
+                ChatWelcome(
+                    title = trText(t.emptyTitle),
+                    subtitle = trText(t.emptySubtitle),
+                    onSuggestion = { message = it; error = null }
+                )
             }
             turns.forEach { turn -> item {
                 val assessment = turn.assessment
@@ -352,7 +351,7 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
                             Text(trText(if (urgent) "!" else if (low) "?" else "Ⅱ"), color = accent, style = MaterialTheme.typography.displaySmall)
                             Text(trText(triageHeadline(level, t)), color = accent, style = MaterialTheme.typography.headlineSmall)
                             val summary = assessment.optString("summary").split(Regex("(?<=[.!?।])\\s+")).first()
-                            Text(trText(if (summary.length > 200) summary.take(197) + "…" else summary), style = MaterialTheme.typography.bodyLarge)
+                            TerminalChatText(trText(if (summary.length > 200) summary.take(197) + "…" else summary))
                             assessment.optJSONArray("recommended_actions")?.optString(0)?.takeIf { it.isNotBlank() }?.let {
                                 Text(trText("→ $it"), style = MaterialTheme.typography.titleMedium)
                             }

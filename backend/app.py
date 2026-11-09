@@ -261,6 +261,23 @@ def create_app(settings: Settings | None = None, transport=None,
         return {"status": "configured" if settings.provider == "gemini" or settings.groq_key else "missing_groq_key",
                 "model": settings.model, "scoringAvailable": False, "embeddingsAvailable": False}
 
+    from .accessibility_report import AccessibilityReportRequest, AccessibilityReport
+
+    @api.post("/accessibility-report", response_model=AccessibilityReport, dependencies=[Depends(authenticate)])
+    async def accessibility_report(payload: AccessibilityReportRequest):
+        if settings.provider != "gemini":
+            raise HTTPException(503, "Gemini is required for accessibility reports.")
+        from .accessibility_report import generate_report
+        from google.auth.exceptions import DefaultCredentialsError
+        try:
+            return await generate_report(payload, settings.model)
+        except DefaultCredentialsError:
+            logger.warning("Accessibility summary unavailable: local Google Cloud credentials are missing.")
+            raise HTTPException(503, "The AI service is not configured yet. Local settings are still available.") from None
+        except Exception as error:
+            logger.warning("Accessibility summary failed: %s", type(error).__name__)
+            raise HTTPException(502, "Gemini could not prepare the report. Your local settings are still available.") from None
+
     @api.post("/ask", response_model=Insight, dependencies=[Depends(authenticate)])
     async def ask(payload: AskRequest, request: Request):
         if settings.provider != "gemini" and not settings.groq_key:

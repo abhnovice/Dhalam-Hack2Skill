@@ -44,7 +44,9 @@ data class SecurityObservation(
     val installedServices: List<ObservedAccessibilityService>?,
     val developerSignals: List<DeveloperSignal>,
     val permissionInventory: PermissionInventory?,
-    val deviceSignals: List<DeveloperSignal> = emptyList()
+    val deviceSignals: List<DeveloperSignal> = emptyList(),
+    val accessibilitySettings: List<AccessibilitySetting> = emptyList(),
+    val apps: List<ObservedApp>? = null
 )
 
 fun normalizedServiceId(id: String?): String? =
@@ -91,7 +93,9 @@ fun collectSecurityObservation(context: Context): SecurityObservation {
         installedServices = installed,
         developerSignals = developerSignals,
         permissionInventory = inventory,
-        deviceSignals = collectDeviceSignals(context)
+        deviceSignals = collectDeviceSignals(context),
+        accessibilitySettings = collectAccessibilitySettings(context),
+        apps = collectObservedApps(packageManager)
     )
 }
 

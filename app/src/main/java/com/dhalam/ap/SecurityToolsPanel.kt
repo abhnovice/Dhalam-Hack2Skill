@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun SecurityToolsPanel(observedAt: Long?) {
+fun SecurityToolsPanel(observedAt: Long?, capture: CaptureObservation = CaptureObservation()) {
     val context = LocalContext.current
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
@@ -40,7 +40,7 @@ fun SecurityToolsPanel(observedAt: Long?) {
         try {
             journal = withContext(Dispatchers.IO) { SecurityJournalStore.load(context) }
             error = null
-        } catch (_: Exception) { error = "Could not read saved history. Existing storage was not overwritten. Clear local history to reset it." }
+        } catch (_: Exception) { error = "History unavailable. Saved data was kept." }
     }
     fun update(operation: () -> SecurityJournalData) {
         busy = true
@@ -72,10 +72,16 @@ fun SecurityToolsPanel(observedAt: Long?) {
                 FilterChip(selected = tab == label, onClick = { tab = label }, label = { Text(trText(label)) }, modifier = Modifier.padding(end = 8.dp))
             }
         }
+        Text(trText(journal.records.firstOrNull()?.let { record ->
+            val attention = record.findings.count { it.state == "Needs attention" }
+            val unknown = record.findings.count { it.state == "Unavailable" }
+            "$attention need attention · $unknown unavailable"
+        } ?: "No checks yet."), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (error != null) Text(trText(error!!), color = MaterialTheme.colorScheme.error)
         when (tab) {
             "Findings" -> {
-                if (journal.records.isEmpty()) Text(trText("Run a scan to see your device review."))
+                if (journal.records.isEmpty()) Text(trText("Scan to see findings."))
                 journal.records.firstOrNull()?.let { record ->
                     FindingsOverview(record.findings, findingFilter) { findingFilter = it }
                     Text(trText("Observed " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(record.at))), style = MaterialTheme.typography.bodySmall)
@@ -103,9 +109,9 @@ fun SecurityToolsPanel(observedAt: Long?) {
             }
             "History" -> {
                 Text(trText("Changes since previous check"), style = MaterialTheme.typography.titleMedium)
-                Text(trText("Times show when a change was observed, not when it happened."))
+                Text(trText("Times show observations, not events."))
                 if (journal.records.isEmpty()) Text(trText("No checks recorded yet."))
-                Text(trText("Last 30 successful foreground checks, stored locally. Inventory history contains counts, not individual app or permission changes. Times are UTC. Background checks continue separately."))
+                Text(trText("Last 30 checks · On device · UTC"))
                 journal.records.forEachIndexed { index, record ->
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(trText("● Observed at ${securityStamp(record.at)}"), style = MaterialTheme.typography.titleMedium)
@@ -121,14 +127,16 @@ fun SecurityToolsPanel(observedAt: Long?) {
                 TextButton(enabled = !busy, onClick = { clearPrompt = true }) { Text(trText("Clear local history and reviews")) }
             }
             "Privacy review" -> {
-                Text(trText("Manual review. Confirm only after reviewing the setting. These are your confirmations, not automatic verification; revisit them after changes."))
+                Text(trText("Check each setting before marking reviewed."))
                 securityReviewSteps.forEach { (id, instructions) ->
+                    var guideOpen by remember(id) { mutableStateOf(false) }
                     Row(Modifier.fillMaxWidth()) {
                         Checkbox(checked = journal.reviewed.containsKey(id), enabled = !busy,
                             onCheckedChange = { checked -> update { SecurityJournalStore.review(context, id, checked) } })
                         Column(Modifier.weight(1f).padding(top = 12.dp)) {
                             Text(trText(id), style = MaterialTheme.typography.titleMedium)
-                            Text(trText(instructions))
+                            TextButton(onClick = { guideOpen = !guideOpen }) { Text(trText("Guide")) }
+                            SlidePushVisibility(guideOpen) { Text(trText(instructions)) }
                             Text(trText(journal.reviewed[id]?.let { "User-confirmed: ${securityStamp(it)}" } ?: "Not confirmed"))
                         }
                     }
@@ -140,7 +148,7 @@ fun SecurityToolsPanel(observedAt: Long?) {
                 Text(trText("Menu names vary by Android device."))
             }
             "Link inspector" -> {
-                Text(trText("See where a link points without opening it."), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(trText("Check a link without opening it."), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = url, onValueChange = { if (it.length <= 4096) { url = it; inspection = null } }, label = { Text(trText("URL to inspect")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false), modifier = Modifier.fillMaxWidth(), singleLine = true, shape = MaterialTheme.shapes.medium)
                 Button(onClick = { inspection = inspectSecurityLink(url) }) { Text(trText("Inspect link")) }
@@ -163,8 +171,10 @@ fun SecurityToolsPanel(observedAt: Long?) {
                 }
             }
             "Report" -> {
-                Text(trText("Preview before sharing. Reports include device configuration, check times and manual review confirmations. Choose the recipient in the share sheet."))
-                Button(enabled = error == null, onClick = { preview = journal.report() }) { Text(trText("Generate report preview")) }
+                Text(trText("Saved checks and your reviews. Preview before sharing."))
+                Button(enabled = error == null, onClick = { preview = journal.report() + "\n\nCURRENT CAPTURE · " + securityStamp(System.currentTimeMillis()) +
+                    "\nDhalam recording: " + capture.recording + "\nLast supported screenshot: " +
+                    (capture.lastScreenshotAt?.let(::securityStamp) ?: "None reported") }) { Text(trText("Generate report preview")) }
             }
         }
     }
