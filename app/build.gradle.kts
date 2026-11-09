@@ -37,10 +37,9 @@ android {
                 configString(backendUrl.get().ifBlank { "http://10.0.2.2:18765" }))
         }
         release {
-            optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
-            }
+            // R8's package-scoped Kotlin rewrite makes AndroidX Startup fail
+            // before MainActivity on the release APK (IllegalAccessError).
+            optimization { enable = false }
         }
     }
     compileOptions {

@@ -1,14 +1,23 @@
 package com.dhalam.ap.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.dhalam.ap.R
 
+// Noto Sans (Google Fonts, variable weight). Android falls back to the matching
+// system Noto script fonts for Devanagari, Bengali, Tamil and Telugu.
+@OptIn(ExperimentalTextApi::class)
 val BrandFont = FontFamily(
-    Font(R.font.ibm_plex_sans_regular, FontWeight.Normal),
-    Font(R.font.ibm_plex_sans_semibold, FontWeight.SemiBold)
+    listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
+        Font(
+            R.font.noto_sans, weight,
+            variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))
+        )
+    }
 )
 private val base = Typography()
 val Typography = Typography(

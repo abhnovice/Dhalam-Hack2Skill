@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Light colors
@@ -25,8 +26,36 @@ class AppTheme {
   static const _darkOnSurface = Color(0xFFE5EFEB);
   static const _darkOnSurfaceVariant = Color(0xFFB8CCC3);
 
+  /// Noto Sans (Google Fonts) with the matching Noto script families as
+  /// fallbacks, so Hindi, Marathi, Bengali, Tamil and Telugu answers render in
+  /// the same typeface family instead of an arbitrary system font.
   static TextTheme _buildTextTheme(TextTheme base) {
-    return base.apply(fontFamily: 'IBM Plex Sans');
+    final fallback = [
+      GoogleFonts.notoSansDevanagari().fontFamily!,
+      GoogleFonts.notoSansBengali().fontFamily!,
+      GoogleFonts.notoSansTamil().fontFamily!,
+      GoogleFonts.notoSansTelugu().fontFamily!,
+    ];
+    final themed = GoogleFonts.notoSansTextTheme(base);
+    TextStyle? withFallback(TextStyle? style) =>
+        style?.copyWith(fontFamilyFallback: fallback);
+    return themed.copyWith(
+      displayLarge: withFallback(themed.displayLarge),
+      displayMedium: withFallback(themed.displayMedium),
+      displaySmall: withFallback(themed.displaySmall),
+      headlineLarge: withFallback(themed.headlineLarge),
+      headlineMedium: withFallback(themed.headlineMedium),
+      headlineSmall: withFallback(themed.headlineSmall),
+      titleLarge: withFallback(themed.titleLarge),
+      titleMedium: withFallback(themed.titleMedium),
+      titleSmall: withFallback(themed.titleSmall),
+      bodyLarge: withFallback(themed.bodyLarge),
+      bodyMedium: withFallback(themed.bodyMedium),
+      bodySmall: withFallback(themed.bodySmall),
+      labelLarge: withFallback(themed.labelLarge),
+      labelMedium: withFallback(themed.labelMedium),
+      labelSmall: withFallback(themed.labelSmall),
+    );
   }
 
   static ThemeData get lightTheme {

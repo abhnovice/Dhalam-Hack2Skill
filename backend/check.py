@@ -52,6 +52,8 @@ def deploy(mobile_auth=False):
         'GOOGLE_GENAI_USE_VERTEXAI': 'true',
         'GEMINI_MODEL': os.environ['GEMINI_MODEL'],
         'AI_PROVIDER': 'gemini',
+        'REQUIRE_GOOGLE_SIGNIN': 'true' if mobile_auth else 'false',
+        'TRUST_CLOUD_RUN_IAM': 'false' if mobile_auth else 'true',
     }
     if mobile_auth:
         config['REQUIRE_GOOGLE_SIGNIN'] = 'true'
@@ -72,6 +74,10 @@ def deploy(mobile_auth=False):
     set_key(ROOT / '.env', 'DHALAM_API_URL', url)
     print('Cloud Run URL saved to backend/.env:', url)
     print('Verified Google sign-in required.' if mobile_auth else 'Private service: Cloud Run IAM required.')
+    if mobile_auth:
+        from .whatsapp import WhatsAppConfig
+        if WhatsAppConfig.from_env().ready:
+            setup_whatsapp()
 
 
 def setup_reputation():
@@ -107,6 +113,44 @@ def setup_reputation():
            '--region=' + os.getenv('CLOUD_RUN_REGION', 'asia-south1'),
            '--update-secrets=SAFE_BROWSING_API_KEY=' + secret + ':latest', '--quiet')
     print('Safe Browsing key restricted to its API, stored in .env and Secret Manager, and attached to Cloud Run.')
+
+
+def setup_whatsapp():
+    """Attach Meta credentials through Secret Manager without exposing values in argv."""
+    from .whatsapp import WhatsAppConfig
+    config = WhatsAppConfig.from_env()
+    if not config.ready:
+        raise ValueError('Fill all WHATSAPP_* values in backend/.env before setup')
+    project = os.environ['GOOGLE_CLOUD_PROJECT']
+    region = os.getenv('CLOUD_RUN_REGION', 'asia-south1')
+    service = os.getenv('CLOUD_RUN_SERVICE', 'dhalam-api')
+    identity = f'dhalam-runtime@{project}.iam.gserviceaccount.com'
+    gcloud('services', 'enable', 'secretmanager.googleapis.com')
+    existing = set(gcloud('secrets', 'list', '--format=value(name)', capture=True).splitlines())
+    values = {
+        'WHATSAPP_VERIFY_TOKEN': ('dhalam-whatsapp-verify-token', config.verify_token),
+        'WHATSAPP_APP_SECRET': ('dhalam-whatsapp-app-secret', config.app_secret),
+        'WHATSAPP_ACCESS_TOKEN': ('dhalam-whatsapp-access-token', config.access_token),
+        'WHATSAPP_ALLOWED_SENDERS': ('dhalam-whatsapp-allowed-senders', ','.join(config.allowed_senders)),
+    }
+    bindings = []
+    for env_name, (secret, value) in values.items():
+        if secret not in existing:
+            gcloud('secrets', 'create', secret, '--replication-policy=automatic', '--quiet')
+        subprocess.run(['gcloud', 'secrets', 'versions', 'add', secret, '--data-file=-',
+                        '--project=' + project,
+                        '--account=' + os.getenv('GOOGLE_ACCOUNT', 'ad.anushajain@gmail.com'), '--quiet'],
+                       input=value, text=True, check=True, capture_output=True)
+        gcloud('secrets', 'add-iam-policy-binding', secret,
+               '--member=serviceAccount:' + identity,
+               '--role=roles/secretmanager.secretAccessor', '--quiet', '--format=none')
+        bindings.append(f'{env_name}={secret}:latest')
+    gcloud('run', 'services', 'update', service, '--region=' + region,
+           '--update-secrets=' + ','.join(bindings),
+           '--update-env-vars=WHATSAPP_GRAPH_VERSION=' + config.graph_version + ',WHATSAPP_PHONE_NUMBER_ID=' + config.phone_number_id,
+           '--quiet')
+    print('WhatsApp webhook credentials attached to Cloud Run via Secret Manager.')
+    print('Configure Meta callback URL: ' + os.getenv('DHALAM_API_URL', '').rstrip('/') + '/webhooks/whatsapp')
 
 
 async def live():
@@ -198,6 +242,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', default=os.getenv('DHALAM_API_URL', 'http://127.0.0.1:18765'))
     parser.add_argument('--setup-reputation', action='store_true', help='Configure restricted Safe Browsing key and Cloud Run secret for the non-commercial demo')
+    parser.add_argument('--setup-whatsapp', action='store_true', help='Attach Meta WhatsApp webhook credentials from backend/.env using Secret Manager')
     parser.add_argument('--live', action='store_true', help='Make one synthetic Vertex AI request (uses quota)')
     parser.add_argument('--deploy', action='store_true', help='Deploy a private Cloud Run demo (uses billing)')
     parser.add_argument('--mobile-auth', action='store_true', help='Deploy public HTTPS transport with required verified Google user authentication')
@@ -229,6 +274,9 @@ def main():
                                  report['summary']['level_agreements'] != args.limit))
     if args.setup_reputation:
         setup_reputation()
+        return 0
+    if args.setup_whatsapp:
+        setup_whatsapp()
         return 0
     if args.deploy:
         deploy(mobile_auth=args.mobile_auth)

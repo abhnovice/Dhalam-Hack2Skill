@@ -136,6 +136,11 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
     ): T {
         check(state.signedIn) { "Unlock Dhalam first." }
         val url = requireNotNull(backendUrl) { "The AI backend URL is not configured." }
+        if ((state.localSignIn || state.temporarySignIn) &&
+            (url.startsWith("http://10.0.2.2:") || url.startsWith("http://127.0.0.1:") ||
+                url.startsWith("http://localhost:"))) {
+            return action(AskBackendSession(url))
+        }
         if (session != null) {
             return withRefreshedGoogleSession(session, refresh = {
                 val (token, label) = refreshIdentity()
@@ -157,8 +162,8 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
             action(refreshed)
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (_: AskSignInRequiredException) {
-            action(AskBackendSession(url))
+        } catch (error: AskSignInRequiredException) {
+            throw error
         }
     }
 
@@ -185,10 +190,8 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
                 throw error
             } catch (_: AskSignInRequiredException) {
                 session = null
-                AppSessionAccess.signedIn = false
-                state = state.copy(question = "", loading = false, signedIn = false, temporarySignIn = false, localSignIn = false, accountLabel = null,
-                    result = null, submittedQuestion = null,
-                    error = "Your sign-in expired. Sign in with Google again.")
+                state = state.copy(loading = false, result = null,
+                    error = "Link a Google account once to use hosted AI. Your device unlock is still active.")
             } catch (_: SocketTimeoutException) {
                 state = state.copy(loading = false, error = "The request timed out. Please try again.")
             } catch (failure: IOException) {

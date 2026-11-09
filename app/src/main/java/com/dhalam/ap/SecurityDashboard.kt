@@ -1,5 +1,9 @@
 package com.dhalam.ap
 
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.foundation.layout.height
@@ -57,18 +61,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
 private enum class DashboardTab(val label: String, val iconRes: Int) {
-    Triage("Scam check", R.drawable.material_search),
-    Access("Access", R.drawable.material_person),
-    Permissions("Ask Dhalam", R.drawable.material_chat),
-    Developer("Settings", R.drawable.material_code),
-    Tools("Tools", R.drawable.fluent_shield)
+    Triage("Scam check", R.drawable.ms_search),
+    Access("Access", R.drawable.ms_person),
+    Permissions("Ask Dhalam", R.drawable.ms_chat),
+    Developer("Settings", R.drawable.ms_code),
+    Tools("Tools", R.drawable.ms_shield)
 }
+
+private fun DashboardTab.displayLabel(): String =
+    if (appLanguage.value.code == "en") label else tr("Bottom tab: $label")
 
 @Composable
 fun SecurityDashboard(
@@ -91,6 +99,7 @@ fun SecurityDashboard(
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(DashboardTab.Triage.name) }
     var query by rememberSaveable { mutableStateOf("") }
+    var permissionMenuOpen by remember { mutableStateOf(false) }
     var askOpen by rememberSaveable { mutableStateOf(false) }
     var accountOpen by remember { mutableStateOf(false) }
     var captureOpen by remember { mutableStateOf(false) }
@@ -162,13 +171,22 @@ fun SecurityDashboard(
         val colors = MaterialTheme.colorScheme
 
         if (accountOpen) AlertDialog(onDismissRequest = { accountOpen = false },
-            title = { Text("Your account") }, text = { Text(askState.accountLabel ?: "Dhalam session") },
-            confirmButton = { TextButton(onClick = { accountOpen = false; onSignOut() }) { Text("Sign out") } },
-            dismissButton = { TextButton(onClick = { accountOpen = false }) { Text("Close") } })
+            title = { Text(trText("Your account")) }, text = { Text(trText(askState.accountLabel ?: "Dhalam session")) },
+            confirmButton = { TextButton(onClick = { accountOpen = false; onSignOut() }) { Text(trText("Sign out")) } },
+            dismissButton = {
+                Row {
+                    if (askState.localSignIn || askState.temporarySignIn) {
+                        TextButton(onClick = { accountOpen = false; onSignIn() }) {
+                            Text(trText("Google account"))
+                        }
+                    }
+                    TextButton(onClick = { accountOpen = false }) { Text(trText("Close")) }
+                }
+            })
         if (showExports) {
             AlertDialog(
                 onDismissRequest = { showExports = false },
-                title = { Text("Export permission report") },
+                title = { Text(trText("Export permission report")) },
                 text = {
                     Column {
                         Caption("Exports all visible app permissions from the latest scan. Timestamps indicate observation time, not permission use.")
@@ -199,12 +217,12 @@ fun SecurityDashboard(
                                         }
                                     }
                                 }
-                            ) { Text(type.title) }
+                            ) { Text(trText(type.title)) }
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showExports = false }) { Text("Close") }
+                    TextButton(onClick = { showExports = false }) { Text(trText("Close")) }
                 }
             )
         }
@@ -228,11 +246,11 @@ fun SecurityDashboard(
                                     icon = {
                                         Icon(
                                             painter = painterResource(destination.iconRes),
-                                            contentDescription = null,
+                                            contentDescription = trText(destination.label),
                                             modifier = Modifier.size(24.dp)
                                         )
                                     },
-                                    label = { Text(destination.label) }
+                                    label = { Text(destination.displayLabel(), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                                 )
                             }
                         }
@@ -245,35 +263,47 @@ fun SecurityDashboard(
                     .padding(insets)
                     .consumeWindowInsets(insets)
             ) {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.dhalam_logo_transparent),
-                        contentDescription = "Dhalam logo",
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text("Dhalam", style = MaterialTheme.typography.titleMedium)
-                        Caption(lastScan?.let { "Checked $it" } ?: "Device review")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.dhalam_logo_transparent),
+                            contentDescription = "Dhalam logo",
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(trText("Dhalam"), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            Caption(lastScan?.let { "Checked $it" } ?: "Device review")
+                        }
+                        LanguageMenuButton()
                     }
-                    TextButton(onClick = { accountOpen = true }) { Text("Account") }
-                    Button(onClick = onScan, enabled = !scanning) {
-                        Icon(painterResource(R.drawable.material_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
-                        androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-                        Text(if (scanning) "Checking…" else "Scan")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                    ) {
+                        TextButton(onClick = { accountOpen = true }) { Text(trText("Account")) }
+                        Button(onClick = onScan, enabled = !scanning) {
+                            Icon(painterResource(R.drawable.ms_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
+                            androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                            Text(trText(if (scanning) "Checking…" else "Scan"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
                 if (captureStatus == "Active") {
                     Surface(color = colors.errorContainer, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
-                            Text("Coercion Shield · screen capture active", style = MaterialTheme.typography.titleMedium)
-                            Text("Pause before viewing private information. Stop sharing using Android or the sharing app. Dhalam cannot disconnect another app’s session.")
+                            Text(trText("Coercion Shield · screen capture active"), style = MaterialTheme.typography.titleMedium)
+                            Text(trText("Pause before viewing private information. Stop sharing using Android or the sharing app. Dhalam cannot disconnect another app’s session."))
                             if (observation?.services?.isNotEmpty() == true) {
-                                Text("Accessibility access was also enabled at the last check. Both signals can be legitimate; they do not prove fraud.")
+                                Text(trText("Accessibility access was also enabled at the last check. Both signals can be legitimate; they do not prove fraud."))
                             }
                         }
                     }
@@ -301,12 +331,12 @@ fun SecurityDashboard(
                             }
                         }
                         if (scanError != null) {
-                            item("scan_error") { Text(scanError, color = colors.error) }
+                            item("scan_error") { Text(trText(scanError), color = colors.error) }
                         }
 
                         if (tab == DashboardTab.Developer) item("capture_awareness") {
                             TextButton(onClick = { captureOpen = !captureOpen }) {
-                                Text("Screen capture · $captureStatus  ${if (captureOpen) "−" else "+"}")
+                                Text(tr("Screen capture · {status}", mapOf("status" to trText(captureStatus))) + "  ${if (captureOpen) "−" else "+"}")
                             }
                             if (captureOpen) Caption("Supported detection while Dhalam is visible only. Does not detect every recording method or captures of other apps.")
                         }
@@ -314,27 +344,52 @@ fun SecurityDashboard(
                             DashboardTab.Triage -> item("scam_triage") { ScamTriagePanel(analyze = onAnalyze, onSignIn = onSignIn) }
                             DashboardTab.Tools -> item("security_tools") { SecurityToolsPanel(observation?.observedAt) }
                             DashboardTab.Permissions -> {
-                                item("permission_summary") {
-                                    Text("Device access", style = MaterialTheme.typography.headlineMedium)
-                                    Caption("${inventory?.packageCount ?: 0} visible apps · ${lastScan?.let { "observed $it" } ?: "run a scan to begin"}")
-                                    if (inventory != null && search.isEmpty()) SensitivePermissionChart(inventory) { query = it }
-                                    TextButton(onClick = { askOpen = !askOpen }) { Text(if (askOpen) "Close Ask Dhalam" else "Ask Dhalam  →") }
+                                item("permission_heading") {
+                                    Column(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(trText("Device access"), style = MaterialTheme.typography.headlineSmall)
+                                        Caption("Understand which apps have sensitive access.")
+                                    }
+                                }
+                                if (inventory != null && search.isEmpty()) item("permission_chart") {
+                                    SensitivePermissionChart(inventory) { query = it }
+                                }
+                                item("device_chat") {
+                                    OutlinedCard(onClick = { askOpen = !askOpen }, modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
+                                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Text(trText("Ask Dhalam"), style = MaterialTheme.typography.titleMedium, color = colors.primary)
+                                                Caption("Ask about your apps and permissions")
+                                            }
+                                            Text(trText(if (askOpen) "−" else "+"), style = MaterialTheme.typography.titleLarge, color = colors.primary)
+                                        }
+                                    }
                                     if (askOpen) AskDhalamInput(askState, scanning, onQuestionChange, onAsk, onClearAsk, onSignIn, onSignOut)
                                 }
                                 item("permission_search") {
-                                    OutlinedTextField(value = query, onValueChange = { query = it },
-                                        modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                        shape = RoundedCornerShape(16.dp), label = { Text("Find an app or permission") },
-                                        trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("Clear") } })
-                                    TextButton(onClick = { showExports = true }, enabled = inventory != null && !exporting) { Text("Export permission report") }
-                                    exportMessage?.let { Caption(it) }
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(trText("Find an app"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                            androidx.compose.foundation.layout.Box {
+                                                TextButton(onClick = { permissionMenuOpen = true }) { Text(trText("More")) }
+                                                DropdownMenu(expanded = permissionMenuOpen, onDismissRequest = { permissionMenuOpen = false }) {
+                                                    DropdownMenuItem(text = { Text(trText("Export permission report")) }, enabled = inventory != null && !exporting,
+                                                        onClick = { permissionMenuOpen = false; showExports = true })
+                                                }
+                                            }
+                                        }
+                                        OutlinedTextField(value = query, onValueChange = { query = it },
+                                            modifier = Modifier.fillMaxWidth(), singleLine = true,
+                                            shape = RoundedCornerShape(16.dp), placeholder = { Text(trText("App name or permission")) },
+                                            leadingIcon = { Icon(painterResource(R.drawable.ms_search), contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                            trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text(trText("Clear")) } })
+                                        exportMessage?.let { Caption(it) }
+                                    }
                                 }
 
                                 if (inventory != null) {
                                     when {
-                                        search.isEmpty() -> item("search_hint") {
-                                            Caption("Search by app name, package name, or permission. Grants describe access, not actual use.")
-                                        }
+                                        search.isEmpty() -> Unit
                                         matches.isEmpty() -> item("no_matches") {
                                             Caption("No matching apps or permissions.")
                                         }
@@ -350,14 +405,14 @@ fun SecurityDashboard(
                                     Panel(accent = true) {
                                         Heading("Accessibility access")
                                         Text(
-                                            when {
+                                            trText(when {
                                                 services == null -> "Enabled service list unavailable"
                                                 services.isEmpty() -> "No enabled services reported"
                                                 else -> "${services.size} enabled services reported"
-                                            }
+                                            })
                                         )
                                         TextButton(onClick = onOpenAccessibility) {
-                                            Text("Open Accessibility settings")
+                                            Text(trText("Open Accessibility settings"))
                                         }
                                     }
                                 }
@@ -371,7 +426,7 @@ fun SecurityDashboard(
                                         Caption("Configuration and availability checks, not passcode strength or proof of device safety.")
                                         observation?.deviceSignals.orEmpty().forEach { signal ->
                                             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                                Text(signal.label)
+                                                Text(trText(signal.label))
                                                 Caption(signal.status)
                                             }
                                         }
@@ -386,22 +441,22 @@ fun SecurityDashboard(
                                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
-                                                Text(signal.label, modifier = Modifier.weight(1f))
+                                                Text(trText(signal.label), modifier = Modifier.weight(1f))
                                                 Caption(signal.status)
                                             }
                                         }
                                         TextButton(onClick = onOpenDeveloperOptions) {
-                                            Text("Open Developer options")
+                                            Text(trText("Open Developer options"))
                                         }
                                     }
                                 }
                             }
                         }
 
-                        if (!notificationsEnabled) {
+                        if (!notificationsEnabled && tab == DashboardTab.Developer) {
                             item("quiet_alerts") {
                                 TextButton(onClick = onEnableAlerts) {
-                                    Text("Enable quiet alerts")
+                                    Text(trText("Enable quiet alerts"))
                                 }
                             }
                         }
@@ -429,7 +484,7 @@ private fun PermissionRow(report: PermissionReport, search: String) {
                 Caption("${report.apps.size} apps requested access")
             }
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide" else "View apps")
+                Text(trText(if (expanded) "Hide" else "View apps"))
             }
         }
 
@@ -446,7 +501,7 @@ private fun PermissionRow(report: PermissionReport, search: String) {
                     null -> "Unknown"
                 }
                 Column(Modifier.padding(top = 4.dp)) {
-                    Text("${app.label} · $status")
+                    Text("${app.label} · ${trText(status)}")
                     Caption(app.packageName)
                 }
             }
@@ -465,14 +520,14 @@ private fun ServiceRow(service: ObservedAccessibilityService) {
                 Caption("Reported enabled")
             }
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide" else "Details")
+                Text(trText(if (expanded) "Hide" else "Details"))
             }
         }
 
         if (expanded) {
             Caption(service.id ?: "Service ID unavailable")
             Caption(
-                service.capabilities.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+                service.capabilities.takeIf { it.isNotEmpty() }?.joinToString(" · ") { trText(it) }
                     ?: "No checked capabilities reported."
             )
         }
@@ -502,7 +557,7 @@ private fun Panel(accent: Boolean = false, content: @Composable () -> Unit) {
 @Composable
 private fun Heading(text: String) {
     Text(
-        text = text,
+        text = trText(text),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold
     )
@@ -510,7 +565,7 @@ private fun Heading(text: String) {
 
 @Composable
 private fun Caption(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall)
+    Text(trText(text), style = MaterialTheme.typography.bodySmall)
 }
 
 private fun permissionTitle(name: String): String =

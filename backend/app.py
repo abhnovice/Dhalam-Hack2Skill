@@ -35,6 +35,7 @@ class Settings:
     provider: str = "groq"
     require_google_signin: bool = False
     allowed_google_emails: tuple[str, ...] = ()
+    trust_cloud_run_iam: bool = False
 
     @classmethod
     def from_env(cls):
@@ -47,6 +48,7 @@ class Settings:
             os.getenv("AI_PROVIDER", "gemini").strip(),
             os.getenv("REQUIRE_GOOGLE_SIGNIN", "true" if os.getenv("K_SERVICE") else "false").lower() == "true",
             tuple(email.strip().lower() for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",") if email.strip()),
+            os.getenv("TRUST_CLOUD_RUN_IAM", "false").lower() == "true",
         )
 
 
@@ -179,7 +181,8 @@ def verify_google_identity(token: str, audience: str) -> dict:
 
 
 def create_app(settings: Settings | None = None, transport=None,
-               verify_identity=verify_google_identity) -> FastAPI:
+               verify_identity=verify_google_identity, whatsapp_config=None,
+               whatsapp_analyzer=None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
 
     @asynccontextmanager
@@ -199,6 +202,11 @@ def create_app(settings: Settings | None = None, transport=None,
 
     async def authenticate(request: Request,
                            credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+        # Private Cloud Run has already verified the IAM token at the edge.
+        # It forwards Authorization, whose audience is the service URL rather
+        # than a Google OAuth Web client. This mode is Cloud Run only.
+        if settings.trust_cloud_run_iam and os.getenv("K_SERVICE") and not settings.require_google_signin:
+            return None
         if "authorization" not in request.headers:
             if settings.require_google_signin:
                 raise HTTPException(401, "Sign in with Google to use cloud AI.",
@@ -325,8 +333,13 @@ def create_app(settings: Settings | None = None, transport=None,
             # Never forward raw model responses or upstream errors.
             raise HTTPException(502, "Groq returned an incomplete or unsupported answer. Try again.") from None
 
-    from .triage.main import app as triage_app
+    from .triage.main import app as triage_app, analyze_threat_endpoint
     api.include_router(triage_app.router, dependencies=[Depends(authenticate)])
+    from .whatsapp import WhatsAppConfig, create_router
+    api.include_router(create_router(
+        whatsapp_config if whatsapp_config is not None else WhatsAppConfig.from_env(),
+        whatsapp_analyzer if whatsapp_analyzer is not None else analyze_threat_endpoint,
+    ))
     return api
 
 

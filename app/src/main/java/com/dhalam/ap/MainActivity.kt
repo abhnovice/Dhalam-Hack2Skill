@@ -218,10 +218,10 @@ class MainActivity : FragmentActivity() {
         }
         askViewModel.beginBiometricSignIn()
         biometricPrompt.authenticate(BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Dhalam")
-            .setSubtitle("Use your device biometric to continue locally")
+            .setTitle(tr("Unlock Dhalam"))
+            .setSubtitle(tr("Use your device biometric to continue locally"))
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText("Cancel")
+            .setNegativeButtonText(tr("Cancel"))
             .build())
     }
 
@@ -244,11 +244,15 @@ class MainActivity : FragmentActivity() {
                     val google = GoogleIdTokenCredential.createFrom(requireNotNull(credential).data)
                     askViewModel.completeGoogleSignIn(google.idToken, google.displayName ?: google.id)
                 } catch (_: GetCredentialCancellationException) {
-                    askViewModel.signInFailed("Sign-in was cancelled.")
+                    askViewModel.signInFailed(if (BuildConfig.DEBUG)
+                        "Google sign-in did not complete. If you selected an account, check this build’s Android OAuth client and SHA-1."
+                    else "Google sign-in did not complete. Please try again.")
                 } catch (_: NoCredentialException) {
                     askViewModel.signInFailed("No Google account is available. Add an account to this device and try again.")
                 } catch (_: GetCredentialException) {
-                    askViewModel.signInFailed("Google sign-in could not complete. Please try again.")
+                    askViewModel.signInFailed(if (BuildConfig.DEBUG)
+                        "Google rejected this OAuth setup. Check that the server client ID is a Web application client and the Android client matches this app’s SHA-1."
+                    else "Google sign-in could not complete. Please try again.")
                 } catch (error: CancellationException) {
                     askViewModel.signInFailed("Sign-in was interrupted. Please try again.")
                     throw error
@@ -323,16 +327,16 @@ class MainActivity : FragmentActivity() {
             pendingLocalAction = action
             val prefs = getSharedPreferences("dhalam_permissions", MODE_PRIVATE)
             if (shouldShowRequestPermissionRationale(localNetworkPermission)) {
-                AlertDialog.Builder(this).setTitle("Connect to your demo backend")
-                    .setMessage("Ask Dhalam needs local network access to reach the backend running on your computer.")
-                    .setPositiveButton("Continue") { _, _ -> localNetworkRequest.launch(localNetworkPermission) }
-                    .setNegativeButton("Cancel", null).show()
+                AlertDialog.Builder(this).setTitle(tr("Connect to your demo backend"))
+                    .setMessage(tr("Ask Dhalam needs local network access to reach the backend running on your computer."))
+                    .setPositiveButton(tr("Continue")) { _, _ -> localNetworkRequest.launch(localNetworkPermission) }
+                    .setNegativeButton(tr("Cancel"), null).show()
             } else if (prefs.getBoolean("asked_for_local_network", false)) {
-                AlertDialog.Builder(this).setTitle("Allow local network access")
-                    .setMessage("Enable Nearby devices for Dhalam in App settings to reach your local backend.")
-                    .setPositiveButton("App settings") { _, _ ->
+                AlertDialog.Builder(this).setTitle(tr("Allow local network access"))
+                    .setMessage(tr("Enable Nearby devices for Dhalam in App settings to reach your local backend."))
+                    .setPositiveButton(tr("App settings")) { _, _ ->
                         openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
-                    }.setNegativeButton("Cancel", null).show()
+                    }.setNegativeButton(tr("Cancel"), null).show()
             } else {
                 prefs.edit().putBoolean("asked_for_local_network", true).apply()
                 localNetworkRequest.launch(localNetworkPermission)

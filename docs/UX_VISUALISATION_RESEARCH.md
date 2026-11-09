@@ -1,5 +1,9 @@
 # Dhalam: research and visualisation proposal
 
+> Research and validation snapshot from 8 November 2026. Its test counts and
+> build status are historical; see [the repository README](../README.md) and
+> [the app runbook](../view_app.md) for the current demo state.
+
 Research date: 8 November 2026. Scope: native Android (Compose), Flutter Android, Flutter iOS.
 
 ## Implementation update
@@ -144,7 +148,7 @@ Implementation checks should cover empty history, first observation, failed/stal
 - Native Ask Dhalam leads with five sensitive-permission bars, with chat collapsed behind “Ask Dhalam”. A compact header provides one Account control.
 - Findings in both clients use a donut, count filters, and expandable details. The counts describe recorded checks, not a safety score.
 - Flutter Android places the sensitive-permission chart directly below the scan action; rows expand to show apps. Detailed settings panels are collapsed by default on both Flutter platforms. iOS retains guided reviews and explicit platform limitations.
-- Both clients bundle IBM Plex Sans and its OFL license for offline use. Teal/neutral theme roles replace the default purple card, outline, and selected-navigation colors.
+- Both clients use Noto Sans from Google Fonts (native bundles it; Flutter fetches and caches it on first launch). Teal/neutral theme roles replace the default purple card, outline, and selected-navigation colors.
 - Validation: Flutter analysis clean; 22 Flutter tests pass; native debug build and JVM tests pass; Flutter Android debug APK and ARM64 iOS simulator build pass.
 - Visually reviewed the rebuilt native Device and Tools screens on the API 36 emulator. Screenshots: [Device](interact-with-app/screenshots/native-device-redesign.png), [Tools](interact-with-app/screenshots/native-tools-redesign.png). Flutter runtime visual review and physical-device review remain pending.
 - Debug APKs rebuilt in their normal build directories. Distributable packages in `build/apks/` were not replaced.

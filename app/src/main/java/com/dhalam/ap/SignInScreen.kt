@@ -77,7 +77,7 @@ fun AuthenticatedContent(
                 onSubmit = onTemporarySignIn
             )
         }
-        Scaffold(containerColor = MaterialTheme.colorScheme.background) { insets ->
+        Scaffold(topBar = { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { LanguageMenuButton() } }, containerColor = MaterialTheme.colorScheme.background) { insets ->
             Column(
                 Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -97,7 +97,7 @@ fun AuthenticatedContent(
                             modifier = Modifier.size(156.dp)
                         )
                         Text(
-                            "Dhalam",
+                            trText("Dhalam"),
                             style = MaterialTheme.typography.headlineMedium,
                             fontFamily = SignInBrandFont,
                             fontWeight = FontWeight.SemiBold,
@@ -105,7 +105,7 @@ fun AuthenticatedContent(
                             modifier = Modifier.padding(top = 16.dp)
                         )
                         Text(
-                            "Sign in to review your device’s permissions and security.",
+                            trText("Sign in to review your device’s permissions and security."),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -126,12 +126,12 @@ fun AuthenticatedContent(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Verifying sign-in…", style = MaterialTheme.typography.bodyMedium)
+                            Text(trText("Verifying sign-in…"), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                     state.error?.let {
                         Text(
-                            it,
+                            trText(it),
                             color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium
@@ -141,9 +141,9 @@ fun AuthenticatedContent(
                         onClick = onBiometricSignIn,
                         enabled = !state.signingIn,
                         modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 52.dp)
-                    ) { Text("Unlock with biometrics") }
+                    ) { Text(trText("Unlock with biometrics")) }
                     Text(
-                        "Choose biometrics or Google. Biometric data stays on your device.",
+                        trText("Choose biometrics or Google. Biometric data stays on your device."),
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center
                     )
@@ -167,7 +167,7 @@ fun AuthenticatedContent(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            "Sign in with Google",
+                            trText("Sign in with Google"),
                             fontFamily = com.dhalam.ap.ui.theme.BrandFont,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
@@ -183,7 +183,7 @@ fun AuthenticatedContent(
                             enabled = !state.signingIn,
                             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp)
                         ) {
-                            Text("Temporary developer sign-in")
+                            Text(trText("Temporary developer sign-in"))
                         }
                     }
                 }
@@ -218,18 +218,18 @@ internal fun TemporarySignInDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Temporary developer sign-in") },
+        title = { Text(trText("Temporary developer sign-in")) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Debug-only access for local dashboard testing.",
+                Text(trText("Debug access to local features. Link Google once for hosted AI."),
                     style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it; error = null },
-                    label = { Text("Username") },
+                    label = { Text(trText("Username")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
@@ -237,22 +237,22 @@ internal fun TemporarySignInDialog(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it; error = null },
-                    label = { Text("Password") },
+                    label = { Text(trText("Password")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { submit() })
                 )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { Text(trText(it), color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             TextButton(onClick = submit, enabled = username.isNotBlank() && password.isNotEmpty()) {
-                Text("Sign in")
+                Text(trText("Sign in"))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(trText("Cancel")) } }
     )
 }
 // TEMPORARY_LOGIN END

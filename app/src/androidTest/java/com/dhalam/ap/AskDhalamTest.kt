@@ -25,6 +25,22 @@ class AskDhalamTest {
         compose.onNodeWithText("Check").assertDoesNotExist()
     }
 
+    @Test fun chatLinkInspectionStaysLocal() {
+        var submissions = 0
+        compose.setContent { MaterialTheme { ScamTriagePanel(
+            androidx.compose.ui.Modifier.fillMaxSize(),
+            analyze = { submissions++; org.json.JSONObject() }
+        ) } }
+        compose.onNode(hasSetTextAction()).performTextInput("https://trusted.example@evil.example/login")
+        compose.onNodeWithText("Inspect link locally").performClick()
+        compose.onNodeWithText("evil.example").assertExists()
+        compose.onNodeWithText("Path: /login").assertExists()
+        assertEquals(0, submissions)
+        compose.onNodeWithText("Close").performClick()
+        compose.onNode(hasSetTextAction()).performTextReplacement("No link here")
+        compose.onNodeWithText("Inspect link locally").assertDoesNotExist()
+    }
+
     @Test fun scamChatRequiresExplicitConsentAndCanCancel() {
         compose.setContent { MaterialTheme { ScamTriagePanel(androidx.compose.ui.Modifier.fillMaxSize()) } }
         compose.onNodeWithText("Check").assertIsNotEnabled()

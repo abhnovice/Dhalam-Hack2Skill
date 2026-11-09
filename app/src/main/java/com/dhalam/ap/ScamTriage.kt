@@ -67,7 +67,9 @@ internal suspend fun submitTriage(origin: String, token: String, payload: JSONOb
         if (connection.responseCode == 401) throw AskSignInRequiredException()
         check(connection.responseCode == 200) {
             when (connection.responseCode) {
-                403 -> "This Google account is not authorized. Sign in with an allowed, verified account."
+                403 -> if (connection.contentType?.contains("application/json", ignoreCase = true) == true)
+                    "This Google account is not authorized. Sign in with an allowed, verified account."
+                else "Cloud Run denied this request before it reached Dhalam. This hosted service needs mobile access enabled."
                 413, 422 -> "Review consent and use a valid message, HTTP(S) URL or image under 4 MiB."
                 504 -> "Analysis timed out. Try again later; local checks still work."
                 else -> "Cloud analysis is unavailable. Please try again later."
@@ -117,17 +119,11 @@ internal fun referenceNotes(result: JSONObject): String {
 
 private data class TriageTurn(val text: String, val context: String, val url: String, val image: Boolean, val assessment: JSONObject)
 
-internal fun triageHeadline(level: String): String = when (level) {
-    "HIGH", "CRITICAL" -> "Stop. This looks risky."
-    "LOW" -> "No clear scam signs."
-    else -> "Pause. Let’s check first."
-}
-
 internal fun connectionFailureMessage(origin: String, failure: Exception): String {
     val host = runCatching { URI(origin.trim()).host }.getOrNull()
     return when {
         failure is IllegalArgumentException -> "The app’s backend URL is invalid. Install the latest configured build."
-        host == "10.0.2.2" -> "This address works only in an Android emulator. On a phone, install the build configured for the hosted backend."
+        host == "10.0.2.2" -> "Cannot reach the local backend on your computer. Start it on port 18765 and try again."
         host in setOf("127.0.0.1", "localhost") -> "Cannot reach the local backend. Connect this phone by USB and set up adb reverse, or use your hosted HTTPS backend configured in this build."
         failure is java.net.SocketTimeoutException -> "The backend took too long to respond. Try again; local device checks still work."
         failure is javax.net.ssl.SSLException -> "Could not establish a secure connection. Check the backend URL and your phone’s date and time."
@@ -145,6 +141,13 @@ fun ScamTriagePanel(
     val scope = rememberCoroutineScope()
     val colors = MaterialTheme.colorScheme
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    var language by appLanguage
+    val t = language.strings
+    var languageMenu by remember { mutableStateOf(false) }
+    var speaking by remember { mutableStateOf<TriageTurn?>(null) }
+    val speaker = remember { AnswerSpeaker(context) { speaking = null } }
+    LaunchedEffect(language.code) { speaker.stop(); speaking = null }
+    DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
     var message by remember { mutableStateOf("") }
     var image by remember { mutableStateOf<ByteArray?>(null) }
     var mime by remember { mutableStateOf<String?>(null) }
@@ -154,6 +157,24 @@ fun ScamTriagePanel(
     var details by remember { mutableStateOf<TriageTurn?>(null) }
     var preview by remember { mutableStateOf<String?>(null) }
     var consentOpen by remember { mutableStateOf(false) }
+    val dictation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val words = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (result.resultCode == Activity.RESULT_OK && !words.isNullOrBlank()) {
+            message = (message.trim() + " " + words).trim().take(12000)
+            error = null
+        }
+    }
+    fun dictate() {
+        speaker.stop(); speaking = null
+        try { dictation.launch(speechIntent(language, t.listening)) }
+        catch (_: android.content.ActivityNotFoundException) { error = t.voiceUnavailable }
+    }
+    fun toggleSpeaking(turn: TriageTurn) {
+        if (speaking == turn) { speaker.stop(); speaking = null; return }
+        speaker.stop()
+        if (speaker.speak(spokenAnswer(turn.assessment, t), language)) { speaking = turn; error = null }
+        else { speaking = null; error = t.voiceUnavailable }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             busy = true
@@ -186,6 +207,7 @@ fun ScamTriagePanel(
             .put("latest_user_message", text).toString()
         if (combined.length > 12000 || turns.size >= 6) { error = "This chat is full. Start a new chat."; return }
         val payload = JSONObject().put("consent", true)
+        if (language.code != "en") payload.put("language", language.code)
         if (combined.isNotBlank()) payload.put("text", combined)
         if (link.isNotBlank()) payload.put("url", link)
         image?.let { payload.put("image_base64", Base64.encodeToString(it, Base64.NO_WRAP)).put("image_mime_type", mime) }
@@ -197,7 +219,7 @@ fun ScamTriagePanel(
                 turns = turns + TriageTurn(text, combined, link, hadImage, answer)
                 message = ""; image = null; mime = null
             } catch (cancel: CancellationException) { throw cancel }
-            catch (_: AskSignInRequiredException) { error = "Please sign in with Google again to continue." }
+            catch (_: AskSignInRequiredException) { error = "Link a Google account once to use hosted AI. Tap Google account and finish sign-in." }
             catch (failure: IllegalStateException) { error = failure.message ?: "Analysis unavailable." }
             catch (failure: Exception) { error = connectionFailureMessage(BuildConfig.ASK_BACKEND_URL, failure) }
             finally { busy = false }
@@ -207,26 +229,26 @@ fun ScamTriagePanel(
         if (scroll.layoutInfo.totalItemsCount > 0) scroll.animateScrollToItem(scroll.layoutInfo.totalItemsCount - 1)
     }
     if (consentOpen) AlertDialog(onDismissRequest = { consentOpen = false },
-        title = { Text("Send for an AI check?") },
-        text = { Text("Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first. Device checks stay on your phone. Earlier photos are not sent again. Links may be checked with Safe Browsing. Google service retention policies apply; Dhalam does not save submissions on its server.") },
-        confirmButton = { Button(onClick = { consentOpen = false; send() }) { Text("Send for check") } },
-        dismissButton = { TextButton(onClick = { consentOpen = false }) { Text("Not now") } })
+        title = { Text(trText("Send for an AI check?")) },
+        text = { Text(trText("Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first. Device checks stay on your phone. Earlier photos are not sent again. Links may be checked with Safe Browsing. Google service retention policies apply; Dhalam does not save submissions on its server.")) },
+        confirmButton = { Button(onClick = { consentOpen = false; send() }) { Text(trText("Send for check")) } },
+        dismissButton = { TextButton(onClick = { consentOpen = false }) { Text(trText("Not now")) } })
     details?.let { turn ->
         val assessment = turn.assessment
-        AlertDialog(onDismissRequest = { details = null }, title = { Text("Why this advice?") },
+        AlertDialog(onDismissRequest = { details = null }, title = { Text(trText("Why this advice?")) },
             text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(assessment.optString("summary"))
+                Text(trText(assessment.optString("summary")))
                 for ((key, label) in listOf("coercion_markers" to "Warning signs", "evidence_extracted" to "What you shared", "recommended_actions" to "What to do")) {
-                    Text(label, style = MaterialTheme.typography.titleMedium)
+                    Text(trText(label), style = MaterialTheme.typography.titleMedium)
                     val items = assessment.optJSONArray(key)
-                    if (items != null) for (index in 0 until items.length()) Text("• ${items.optString(index)}")
+                    if (items != null) for (index in 0 until items.length()) Text(trText("• ${items.optString(index)}"))
                 }
-                Text(reputationText(assessment.optString("url_reputation")))
-                Text(assessment.optString("limitations", "AI can be wrong. Verify independently."))
-                Text("Sources for this advice", style = MaterialTheme.typography.titleMedium)
-                SelectionContainer { Text(referenceNotes(assessment)) }
-                Text("AI concern: ${assessment.optInt("scam_probability")}/100. Not a measured probability.")
-                Text("Model: ${assessment.optString("model")} · ${assessment.optString("analyzed_at")}")
+                Text(trText(reputationText(assessment.optString("url_reputation"))))
+                Text(trText(assessment.optString("limitations", "AI can be wrong. Verify independently.")))
+                Text(trText("Sources for this advice"), style = MaterialTheme.typography.titleMedium)
+                SelectionContainer { Text(trText(referenceNotes(assessment))) }
+                Text(trText("AI concern: ${assessment.optInt("scam_probability")}/100. Not a measured probability."))
+                Text(trText("Model: ${assessment.optString("model")} · ${assessment.optString("analyzed_at")}"))
             } },
             confirmButton = { TextButton(onClick = {
                 details = null
@@ -268,19 +290,34 @@ $observations
 Preserve original evidence and redact before sharing. Contact your bank and 1930 / https://cybercrime.gov.in for suspected financial fraud. No complaint has been filed.
 """
                 }
-            }) { Text("Preview report") } },
-            dismissButton = { TextButton(onClick = { details = null }) { Text("Close") } })
+            }) { Text(trText("Preview report")) } },
+            dismissButton = { TextButton(onClick = { details = null }) { Text(trText("Close")) } })
     }
-    if (preview != null) AlertDialog(onDismissRequest = { preview = null }, title = { Text("Review incident report") },
-        text = { SelectionContainer { Text(preview!!, Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) } },
+    if (preview != null) AlertDialog(onDismissRequest = { preview = null }, title = { Text(trText("Review incident report")) },
+        text = { SelectionContainer { Text(trText(preview!!), Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) } },
         confirmButton = { TextButton(onClick = {
             try { (context as? Activity)?.let { shareSecurityReport(it, preview!!) } }
             catch (_: Exception) { error = "Could not open the share sheet." }
-        }) { Text("Share report") } }, dismissButton = { TextButton(onClick = { preview = null }) { Text("Close") } })
+        }) { Text(trText("Share report")) } }, dismissButton = { TextButton(onClick = { preview = null }) { Text(trText("Close")) } })
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { turns = emptyList(); message = ""; image = null; mime = null; error = null }, enabled = !busy) { Text("New chat") }
-            TextButton(onClick = onSignIn, enabled = !busy) { Text("Google account") }
+            TextButton(onClick = { speaker.stop(); speaking = null; turns = emptyList(); message = ""; image = null; mime = null; error = null }, enabled = !busy) { Text(trText("New chat")) }
+            Box {
+                TextButton(onClick = { languageMenu = true }, enabled = !busy) {
+                    Icon(androidx.compose.ui.res.painterResource(R.drawable.ms_translate), contentDescription = t.language, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(trText(language.name))
+                }
+                DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
+                    chatLanguages.forEach { option ->
+                        DropdownMenuItem(text = { Text(trText(option.name)) }, onClick = {
+                            languageMenu = false
+                            speaker.stop(); speaking = null; language = option; error = null
+                        })
+                    }
+                }
+            }
+            TextButton(onClick = onSignIn, enabled = !busy) { Text(trText("Google account")) }
         }
         androidx.compose.foundation.lazy.LazyColumn(state = scroll, modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -288,13 +325,13 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(30.dp), color = colors.primaryContainer) {
-                        Icon(androidx.compose.ui.res.painterResource(R.drawable.fluent_shield), contentDescription = null, modifier = Modifier.padding(24.dp).size(64.dp), tint = colors.primary)
+                        Icon(androidx.compose.ui.res.painterResource(R.drawable.ms_shield), contentDescription = null, modifier = Modifier.padding(24.dp).size(64.dp), tint = colors.primary)
                     }
-                    Text("Not sure?\nLet’s check together.", style = MaterialTheme.typography.headlineMedium,
+                    Text(trText(t.emptyTitle), style = MaterialTheme.typography.headlineMedium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Text("Tell me what happened, or show me a message.", style = MaterialTheme.typography.bodyLarge)
-                    SuggestionChip(onClick = { message = "Someone is asking me to send money. " }, label = { Text("Someone wants money") })
-                    Text("No need to decide in a hurry.", color = colors.onSurfaceVariant)
+                    Text(trText(t.emptySubtitle), style = MaterialTheme.typography.bodyLarge)
+                    SuggestionChip(onClick = { message = "Someone is asking me to send money. " }, label = { Text(trText("Someone wants money")) })
+                    Text(trText("No need to decide in a hurry."), color = colors.onSurfaceVariant)
                 }
             }
             turns.forEach { turn -> item {
@@ -306,60 +343,77 @@ Preserve original evidence and redact before sharing. Contact your bank and 1930
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Surface(modifier = Modifier.padding(start = 36.dp).fillMaxWidth(), color = colors.primaryContainer,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)) {
-                        Text(turn.text.ifBlank { "Photo shared" } + if (turn.image && turn.text.isNotBlank()) "\nPhoto shared" else "", Modifier.padding(18.dp), style = MaterialTheme.typography.bodyLarge)
+                        Text(trText(turn.text.ifBlank { "Photo shared" } + if (turn.image && turn.text.isNotBlank()) "\nPhoto shared" else ""), Modifier.padding(18.dp), style = MaterialTheme.typography.bodyLarge)
                     }
+                    ChatLinkPreview(turn.text)
                     Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp), color = colors.surface,
                         border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = .3f))) {
                         Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Text(if (urgent) "!" else if (low) "?" else "Ⅱ", color = accent, style = MaterialTheme.typography.displaySmall)
-                            Text(triageHeadline(level), color = accent, style = MaterialTheme.typography.headlineSmall)
-                            val summary = assessment.optString("summary").split(Regex("(?<=[.!?])\\s+")).first()
-                            Text(if (summary.length > 200) summary.take(197) + "…" else summary, style = MaterialTheme.typography.bodyLarge)
+                            Text(trText(if (urgent) "!" else if (low) "?" else "Ⅱ"), color = accent, style = MaterialTheme.typography.displaySmall)
+                            Text(trText(triageHeadline(level, t)), color = accent, style = MaterialTheme.typography.headlineSmall)
+                            val summary = assessment.optString("summary").split(Regex("(?<=[.!?।])\\s+")).first()
+                            Text(trText(if (summary.length > 200) summary.take(197) + "…" else summary), style = MaterialTheme.typography.bodyLarge)
                             assessment.optJSONArray("recommended_actions")?.optString(0)?.takeIf { it.isNotBlank() }?.let {
-                                Text("→ $it", style = MaterialTheme.typography.titleMedium)
+                                Text(trText("→ $it"), style = MaterialTheme.typography.titleMedium)
                             }
                             assessment.optJSONArray("coercion_markers")?.let { markers ->
-                                if (markers.length() > 0) Text("Warning signs", style = MaterialTheme.typography.titleMedium)
+                                if (markers.length() > 0) Text(trText("Warning signs"), style = MaterialTheme.typography.titleMedium)
                                 for (index in 0 until minOf(3, markers.length())) {
                                     Card { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        Text("!", color = accent, style = MaterialTheme.typography.titleMedium)
-                                        Text(markers.optString(index), Modifier.weight(1f))
+                                        Text(trText("!"), color = accent, style = MaterialTheme.typography.titleMedium)
+                                        Text(trText(markers.optString(index)), Modifier.weight(1f))
                                     } }
                                 }
                             }
                             var evidenceOpen by remember { mutableStateOf(false) }
                             assessment.optJSONArray("evidence_extracted")?.let { evidence ->
                                 if (evidence.length() > 0) TextButton(onClick = { evidenceOpen = !evidenceOpen }) {
-                                    Text(if (evidenceOpen) "Hide what you shared" else "What you shared")
+                                    Text(trText(if (evidenceOpen) "Hide what you shared" else "What you shared"))
                                 }
                                 if (evidenceOpen) for (index in 0 until minOf(3, evidence.length())) {
-                                    Text("“${evidence.optString(index)}”", style = MaterialTheme.typography.bodyLarge)
+                                    Text(trText("“${evidence.optString(index)}”"), style = MaterialTheme.typography.bodyLarge)
                                 }
                             }
-                            Text(if (low) "This does not prove it is safe." else "AI can be wrong. Check independently.", color = colors.onSurfaceVariant)
-                            TextButton(onClick = { details = turn }) { Text("Why? Show details") }
+                            Text(trText(if (low) "This does not prove it is safe." else "AI can be wrong. Check independently."), color = colors.onSurfaceVariant)
+                            Row {
+                                TextButton(onClick = { toggleSpeaking(turn) }) {
+                                    Icon(androidx.compose.ui.res.painterResource(if (speaking == turn) R.drawable.ms_stop_circle else R.drawable.ms_volume_up),
+                                        contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(trText(if (speaking == turn) t.stopReading else t.readAloud))
+                                }
+                                TextButton(onClick = { details = turn }) { Text(trText("Why? Show details")) }
+                            }
                         }
                     }
                 }
             } }
-            if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("I’m checking. Take a breath.") }
-            error?.let { item { Text(it, color = colors.error) } }
+            if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(trText(t.checking)) }
+            error?.let { item { Text(trText(it), color = colors.error) } }
         }
         Surface(color = colors.surface, tonalElevation = 2.dp) {
             Column(Modifier.padding(12.dp)) {
                 if (image != null) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("Photo ready to check", Modifier.weight(1f))
-                    TextButton(onClick = { image = null; mime = null }, enabled = !busy) { Text("Remove") }
+                    Text(trText("Photo ready to check"), Modifier.weight(1f))
+                    TextButton(onClick = { image = null; mime = null }, enabled = !busy) { Text(trText("Remove")) }
                 }
+                ChatLinkPreview(message)
                 OutlinedTextField(message, { if (it.length <= 12000) { message = it; error = null } }, enabled = !busy,
-                    placeholder = { Text("Type or paste a message…") }, maxLines = 3,
+                    placeholder = { Text(trText(t.hint)) }, maxLines = 3,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    TextButton(onClick = { picker.launch("image/*") }, enabled = !busy) {
-                        Icon(androidx.compose.ui.res.painterResource(R.drawable.material_attach), contentDescription = null, modifier = Modifier.size(22.dp))
-                        Text("Photo")
+                    Row {
+                        TextButton(onClick = { picker.launch("image/*") }, enabled = !busy) {
+                            Icon(androidx.compose.ui.res.painterResource(R.drawable.ms_attach_file), contentDescription = null, modifier = Modifier.size(22.dp))
+                            Text(trText("Photo"))
+                        }
+                        TextButton(onClick = { dictate() }, enabled = !busy) {
+                            Icon(androidx.compose.ui.res.painterResource(R.drawable.ms_mic), contentDescription = t.dictate, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(trText(t.dictate))
+                        }
                     }
-                    Button(onClick = { consentOpen = true }, enabled = !busy && (message.isNotBlank() || image != null), modifier = Modifier.heightIn(min = 48.dp)) { Text("Check") }
+                    Button(onClick = { consentOpen = true }, enabled = !busy && (message.isNotBlank() || image != null), modifier = Modifier.heightIn(min = 48.dp)) { Text(trText(t.check)) }
                 }
             }
         }

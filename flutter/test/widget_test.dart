@@ -4,11 +4,46 @@ import 'package:dhalam/features/security_tools.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dhalam/l10n/app_language.dart';
+import 'package:dhalam/l10n/app_strings.dart';
+import 'package:dhalam/l10n/chat_language.dart';
 import 'package:dhalam/main.dart';
 import 'package:dhalam/screens/dashboard_screen.dart';
 import 'package:dhalam/screens/triage_screen.dart';
 import 'package:dhalam/screens/security_tools_screen.dart';
+import 'package:dhalam/services/voice_service.dart';
 import 'package:dhalam/services/security_scanner.dart';
+
+class FakeVoice implements VoiceService {
+  bool unavailable = false;
+  String? listenLocale;
+  String? spoken;
+  String? spokenLocale;
+  void Function(String)? emit;
+
+  @override
+  Future<void> startListening({
+    required String locale,
+    required void Function(String words) onResult,
+    required void Function() onDone,
+  }) async {
+    if (unavailable) throw const VoiceUnavailableException();
+    listenLocale = locale;
+    emit = onResult;
+  }
+
+  @override
+  Future<void> stopListening() async {}
+  @override
+  Future<void> speak(String text, String locale) async {
+    if (unavailable) throw const VoiceUnavailableException();
+    spoken = text;
+    spokenLocale = locale;
+  }
+
+  @override
+  Future<void> stopSpeaking() async {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +53,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   setUp(() {
+    appLanguage.value = chatLanguages.first;
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     messenger.setMockMethodCallHandler(
       toolsChannel,
@@ -26,11 +62,61 @@ void main() {
     messenger.setMockMethodCallHandler(notifications, (call) async => false);
   });
   tearDown(() {
+    appLanguage.value = chatLanguages.first;
     debugDefaultTargetPlatformOverride = null;
     messenger.setMockMethodCallHandler(toolsChannel, null);
     messenger.setMockMethodCallHandler(security, null);
     messenger.setMockMethodCallHandler(notifications, null);
   });
+
+  testWidgets(
+    'chat inspects pasted links locally without submitting and clears stale results',
+    (tester) async {
+      var submissions = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TriageScreen(
+            journal: SecurityJournal(),
+            ios: true,
+            analyze: (_) async {
+              submissions++;
+              return {};
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField),
+        'Check https://trusted.example@evil.example/login',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Inspect link locally'));
+      await tester.pumpAndSettle();
+      expect(find.text('evil.example'), findsOneWidget);
+      expect(find.text('Path: /login'), findsOneWidget);
+      expect(submissions, 0);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField),
+        'https://different.example',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Inspect link locally'));
+      await tester.pumpAndSettle();
+      expect(find.text('evil.example'), findsNothing);
+      expect(find.text('different.example'), findsOneWidget);
+      expect(submissions, 0);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'No link here');
+      await tester.pumpAndSettle();
+      expect(find.text('Inspect link locally'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 
   testWidgets('iOS checks show limitations and hide Android settings', (
     tester,
@@ -386,5 +472,195 @@ void main() {
 
   test('missing native implementation is an error, not a safe scan', () async {
     expect(SecurityScanner.scan(), throwsA(isA<SecurityException>()));
+  });
+
+  testWidgets('voice dictation fills the message and never auto-sends', (
+    tester,
+  ) async {
+    final voice = FakeVoice();
+    var submissions = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TriageScreen(
+          journal: SecurityJournal(),
+          ios: true,
+          voice: voice,
+          analyze: (_) async {
+            submissions++;
+            return {};
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Speak your message'));
+    await tester.pump();
+    expect(voice.listenLocale, 'en-IN');
+    voice.emit!('They asked for my OTP');
+    await tester.pump();
+    expect(find.text('They asked for my OTP'), findsOneWidget);
+    expect(submissions, 0);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('language choice localizes the chat, voice and request', (
+    tester,
+  ) async {
+    final voice = FakeVoice();
+    final submissions = <Map<String, dynamic>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TriageScreen(
+          journal: SecurityJournal(),
+          ios: true,
+          voice: voice,
+          analyze: (payload) async {
+            submissions.add(payload);
+            return {
+              'summary': 'पहले भेजने वाले की जाँच करें। दूसरा वाक्य।',
+              'scam_probability': 80,
+              'threat_level': 'HIGH',
+              'recommended_actions': ['अपने बैंक को फ़ोन करें।'],
+            };
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Language'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('हिन्दी'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('पक्का नहीं हैं?\nचलिए साथ मिलकर जाँचें।'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('बोलकर लिखें'));
+    await tester.pump();
+    expect(voice.listenLocale, 'hi-IN');
+    voice.emit!('कोई पैसे माँग रहा है');
+    await tester.pump();
+    await tester.tap(find.text('जाँचें'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('जाँच के लिए भेजें'));
+    await tester.pumpAndSettle();
+    expect(submissions.single['language'], 'hi');
+    expect(find.text('रुकिए। यह जोखिम भरा लगता है।'), findsOneWidget);
+    await tester.tap(find.text('उत्तर सुनें'));
+    await tester.pumpAndSettle();
+    expect(voice.spokenLocale, 'hi-IN');
+    expect(
+      voice.spoken,
+      'रुकिए। यह जोखिम भरा लगता है।. पहले भेजने वाले की जाँच करें।. अपने बैंक को फ़ोन करें।',
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('missing voice support shows a message instead of failing', (
+    tester,
+  ) async {
+    final voice = FakeVoice()..unavailable = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TriageScreen(journal: SecurityJournal(), ios: true, voice: voice),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Speak your message'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Voice is not available for this language on this phone.'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('every app string has a translation for every language', () {
+    expect(appStringTable, isNotEmpty);
+    appStringTable.forEach((english, row) {
+      expect(row.length, appLanguageOrder.length, reason: english);
+      for (final text in row) {
+        expect(text.trim(), isNotEmpty, reason: english);
+      }
+      final placeholders = RegExp(
+        r'\{\w+\}',
+      ).allMatches(english).map((m) => m.group(0));
+      for (final text in row) {
+        for (final placeholder in placeholders) {
+          expect(text, contains(placeholder!), reason: english);
+        }
+      }
+    });
+    for (final language in chatLanguages.skip(1)) {
+      expect(appLanguageOrder, contains(language.code));
+    }
+  });
+
+  test('tr falls back to English and fills placeholders', () {
+    expect(tr('Security tools'), 'Security tools');
+    expect(tr('Path: {path}', {'path': '/a'}), 'Path: /a');
+    appLanguage.value = languageForCode('hi');
+    expect(tr('Security tools'), 'सुरक्षा उपकरण');
+    expect(tr('Path: {path}', {'path': '/a'}), 'पथ: /a');
+    expect(
+      tr('Text that is not in the table'),
+      'Text that is not in the table',
+    );
+    expect(trText('Needs attention'), 'ध्यान देना ज़रूरी');
+    expect(trText('3 enabled services reported'), '3 चालू सेवाएँ मिलीं');
+  });
+
+  testWidgets('language choice translates the dashboard and security tools', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: DashboardScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Run security check'), findsOneWidget);
+    await tester.tap(find.byTooltip('Language'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('हिन्दी'));
+    await tester.pumpAndSettle();
+    expect(find.text('Run security check'), findsNothing);
+    expect(find.text('सुरक्षा जाँच चलाएँ'), findsOneWidget);
+    expect(find.text('डिवाइस का अवलोकन'), findsOneWidget);
+    await tester.tap(find.text('सुरक्षा उपकरण'));
+    await tester.pumpAndSettle();
+    expect(find.text('निष्कर्ष'), findsOneWidget);
+    expect(find.text('Findings'), findsNothing);
+    // Switching again from the tools screen changes it live.
+    await tester.tap(find.byTooltip('भाषा'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('தமிழ்'));
+    await tester.pumpAndSettle();
+    expect(find.text('கண்டுபிடிப்புகள்'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('stored finding states are translated only when drawn', (
+    tester,
+  ) async {
+    final journal = SecurityJournal();
+    journal.records = [
+      CheckRecord(1, [explain('Device lock', 'Not configured')]),
+    ];
+    appLanguage.value = languageForCode('hi');
+    await tester.pumpWidget(
+      MaterialApp(home: SecurityToolsScreen(journal: journal, ios: true)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('डिवाइस लॉक · ध्यान देना ज़रूरी'), findsOneWidget);
+    expect(journal.records.first.findings.first.state, 'Needs attention');
+    await tester.tap(
+      find.byKey(const ValueKey('finding-filter-Needs attention')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('डिवाइस लॉक · ध्यान देना ज़रूरी'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
   });
 }

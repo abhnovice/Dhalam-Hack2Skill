@@ -3,10 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:image_picker/image_picker.dart';
 import '../features/security_tools.dart';
+import '../l10n/app_language.dart';
+import '../l10n/chat_language.dart';
+import '../services/voice_service.dart';
 import 'security_tools_screen.dart';
 import 'dashboard_screen.dart';
+import 'chat_link_preview.dart';
 
 /// Private Cloud Run demo: short-lived IAM token entered for this session only.
 /// No Google API key or service-account credential is shipped in the app.
@@ -15,18 +20,22 @@ class TriageScreen extends StatefulWidget {
   final bool ios;
   final String initialUrl;
   final Future<Map<String, dynamic>> Function(Map<String, dynamic>)? analyze;
+
+  /// Replaceable so tests never reach the speech and text-to-speech plugins.
+  final VoiceService? voice;
   const TriageScreen({
     super.key,
     required this.journal,
     required this.ios,
     this.initialUrl = '',
     this.analyze,
+    this.voice,
   });
   @override
   State<TriageScreen> createState() => _TriageScreenState();
 }
 
-class _TriageScreenState extends State<TriageScreen> {
+class _TriageScreenState extends State<TriageScreen> with LanguageListener {
   final _message = TextEditingController();
   final _url = TextEditingController();
   final _endpoint = TextEditingController(
@@ -41,6 +50,15 @@ class _TriageScreenState extends State<TriageScreen> {
   final _scroll = ScrollController();
   String? _error;
   HttpClient? _client;
+  VoiceService? _voiceService;
+  bool _listening = false;
+  Map<String, dynamic>? _speaking;
+  String _dictationBase = '';
+
+  VoiceService get _voice =>
+      _voiceService ??= widget.voice ?? DeviceVoiceService();
+  ChatLanguage get _language => appLanguage.value;
+  ChatStrings get _t => _language.strings;
 
   @override
   void initState() {
@@ -68,8 +86,123 @@ class _TriageScreenState extends State<TriageScreen> {
     }
   }
 
+  void _voiceUnavailable() {
+    if (!mounted) return;
+    setState(() {
+      _listening = false;
+      _speaking = null;
+      _error = _t.voiceUnavailable;
+    });
+    _toLatest();
+  }
+
+  Future<void> _toggleListening() async {
+    if (_listening) {
+      await _voice.stopListening();
+      if (mounted) setState(() => _listening = false);
+      return;
+    }
+    await _stopSpeaking();
+    _dictationBase = _message.text.trim();
+    setState(() {
+      _listening = true;
+      _error = null;
+    });
+    try {
+      await _voice.startListening(
+        locale: _language.locale,
+        onResult: (words) {
+          if (!mounted) return;
+          _message.text = _dictationBase.isEmpty
+              ? words
+              : '$_dictationBase $words';
+          _message.selection = TextSelection.collapsed(
+            offset: _message.text.length,
+          );
+          setState(() {});
+        },
+        onDone: () {
+          if (mounted && _listening) setState(() => _listening = false);
+        },
+      );
+    } on VoiceUnavailableException {
+      _voiceUnavailable();
+    } catch (_) {
+      _voiceUnavailable();
+    }
+  }
+
+  Future<void> _stopSpeaking() async {
+    if (_speaking == null) return;
+    setState(() => _speaking = null);
+    try {
+      await _voice.stopSpeaking();
+    } catch (_) {
+      /* Nothing is playing. */
+    }
+  }
+
+  Future<void> _toggleSpeaking(Map<String, dynamic> turn) async {
+    if (identical(_speaking, turn)) return _stopSpeaking();
+    if (_listening) {
+      await _voice.stopListening();
+      if (mounted) setState(() => _listening = false);
+    }
+    await _stopSpeaking();
+    if (!mounted) return;
+    setState(() {
+      _speaking = turn;
+      _error = null;
+    });
+    try {
+      await _voice.speak(_spokenAnswer(turn), _language.locale);
+    } catch (_) {
+      _voiceUnavailable();
+      return;
+    }
+    if (mounted && identical(_speaking, turn)) setState(() => _speaking = null);
+  }
+
+  String _spokenAnswer(Map<String, dynamic> turn) {
+    final result = turn['result'] as Map<String, dynamic>;
+    final summary = (result['summary'] as String? ?? '').split(
+      RegExp(r'(?<=[.!?।])\s+'),
+    );
+    final actions = (result['recommended_actions'] as List? ?? []);
+    return [
+      _headline(result['threat_level']),
+      summary.first,
+      if (actions.isNotEmpty) actions.first.toString(),
+    ].join('. ');
+  }
+
+  String _headline(Object? level) => level == 'HIGH' || level == 'CRITICAL'
+      ? _t.urgentHeadline
+      : level == 'LOW'
+      ? _t.lowHeadline
+      : _t.mediumHeadline;
+
+  /// Stops dictation and speech before the shared language changes.
+  Future<void> _beforeLanguageChange() async {
+    if (_listening) {
+      try {
+        await _voice.stopListening();
+      } catch (_) {
+        /* Not listening any more. */
+      }
+    }
+    await _stopSpeaking();
+    if (!mounted) return;
+    setState(() {
+      _listening = false;
+      _error = null;
+    });
+  }
+
   @override
   void dispose() {
+    _voiceService?.stopListening().catchError((_) {});
+    _voiceService?.stopSpeaking().catchError((_) {});
     _client?.close(force: true);
     _scroll.dispose();
     for (final controller in [_message, _url, _endpoint, _token]) {
@@ -231,24 +364,30 @@ class _TriageScreenState extends State<TriageScreen> {
     final allowed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        icon: const Icon(Icons.cloud_outlined, size: 36),
-        title: const Text('Send for an AI check?'),
+        icon: const Icon(Symbols.cloud, size: 36),
+        title: Text(tr('Send for an AI check?')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first.',
+              Text(
+                tr(
+                  'Your messages in this chat and the selected photo go to Dhalam’s backend and Google AI. Remove OTPs, passwords and account details first.',
+                ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Device checks stay on your phone. Earlier photos are not sent again.',
+              Text(
+                tr(
+                  'Device checks stay on your phone. Earlier photos are not sent again.',
+                ),
               ),
               ExpansionTile(
-                title: const Text('Privacy details'),
-                children: const [
+                title: Text(tr('Privacy details')),
+                children: [
                   Text(
-                    'Links may also be checked with Google Safe Browsing. Dhalam does not save submissions on its server; Google service retention policies apply. Chat stays in memory until you leave or clear it.',
+                    tr(
+                      'Links may also be checked with Google Safe Browsing. Dhalam does not save submissions on its server; Google service retention policies apply. Chat stays in memory until you leave or clear it.',
+                    ),
                   ),
                 ],
               ),
@@ -258,11 +397,11 @@ class _TriageScreenState extends State<TriageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Not now'),
+            child: Text(tr('Not now')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Send for check'),
+            child: Text(tr('Send for check')),
           ),
         ],
       ),
@@ -284,6 +423,7 @@ class _TriageScreenState extends State<TriageScreen> {
     try {
       final result = await (widget.analyze ?? _request)({
         'consent': true,
+        if (_language.code != 'en') 'language': _language.code,
         if (text.isNotEmpty) 'text': text,
         if (url.isNotEmpty) 'url': url,
         if (_image != null) 'image_base64': base64Encode(_image!),
@@ -336,7 +476,7 @@ class _TriageScreenState extends State<TriageScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Review incident report'),
+        title: Text(tr('Review incident report')),
         content: SizedBox(
           width: 600,
           child: SingleChildScrollView(child: SelectableText(report)),
@@ -344,7 +484,7 @@ class _TriageScreenState extends State<TriageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(tr('Close')),
           ),
           TextButton(
             onPressed: () async {
@@ -353,16 +493,18 @@ class _TriageScreenState extends State<TriageScreen> {
               } catch (_) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content: Text(
-                        'Sharing unavailable. You can copy the report text.',
+                        tr(
+                          'Sharing unavailable. You can copy the report text.',
+                        ),
                       ),
                     ),
                   );
                 }
               }
             },
-            child: const Text('Share report'),
+            child: Text(tr('Share report')),
           ),
         ],
       ),
@@ -372,33 +514,33 @@ class _TriageScreenState extends State<TriageScreen> {
   Future<void> _connection() => showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Demo connection'),
+      title: Text(tr('Demo connection')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _endpoint,
-              decoration: const InputDecoration(labelText: 'Backend URL'),
+              decoration: InputDecoration(labelText: tr('Backend URL')),
             ),
             TextField(
               controller: _token,
               obscureText: true,
               enableSuggestions: false,
               autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'Cloud Run token (empty for local)',
+              decoration: InputDecoration(
+                labelText: tr('Cloud Run token (empty for local)'),
               ),
             ),
             const SizedBox(height: 12),
-            const Text('Session only. Never enter an API key.'),
+            Text(tr('Session only. Never enter an API key.')),
           ],
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Done'),
+          child: Text(tr('Done')),
         ),
       ],
     ),
@@ -417,15 +559,15 @@ class _TriageScreenState extends State<TriageScreen> {
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             children: [
               Text(
-                'Why this advice?',
+                tr('Why this advice?'),
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 16),
               Text(result['summary'] as String),
               for (final section in {
-                'coercion_markers': 'Warning signs',
-                'evidence_extracted': 'What you shared',
-                'recommended_actions': 'What to do',
+                'coercion_markers': tr('Warning signs'),
+                'evidence_extracted': tr('What you shared'),
+                'recommended_actions': tr('What to do'),
               }.entries) ...[
                 const SizedBox(height: 16),
                 Text(
@@ -442,26 +584,33 @@ class _TriageScreenState extends State<TriageScreen> {
               Text(reputationLabel(result['url_reputation'] as String?)),
               const SizedBox(height: 16),
               Text(
-                'Sources for this advice',
+                tr('Sources for this advice'),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               SelectableText(referenceNotes(result)),
               Text(
                 result['limitations'] as String? ??
-                    'AI can be wrong. Verify independently.',
+                    tr('AI can be wrong. Verify independently.'),
               ),
               const SizedBox(height: 16),
               Text(
-                'AI concern: ${result['scam_probability']}/100. Not a measured probability.',
+                tr('AI concern: {n}/100. Not a measured probability.', {
+                  'n': result['scam_probability'],
+                }),
               ),
-              Text('Model: ${result['model']} · ${result['analyzed_at']}'),
+              Text(
+                tr('Model: {model} · {at}', {
+                  'model': result['model'],
+                  'at': result['analyzed_at'],
+                }),
+              ),
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
                   _report(turn);
                 },
-                icon: const Icon(Icons.description_outlined),
-                label: const Text('Preview incident report'),
+                icon: const Icon(Symbols.description),
+                label: Text(tr('Preview incident report')),
               ),
             ],
           ),
@@ -480,13 +629,9 @@ class _TriageScreenState extends State<TriageScreen> {
         : low
         ? const Color(0xFF246B73)
         : const Color(0xFF986000);
-    final headline = urgent
-        ? 'Stop. This looks risky.'
-        : low
-        ? 'No clear scam signs.'
-        : 'Pause. Let’s check first.';
+    final headline = _headline(level);
     final summary = result['summary'] as String? ?? '';
-    final sentences = summary.split(RegExp(r'(?<=[.!?])\s+'));
+    final sentences = summary.split(RegExp(r'(?<=[.!?।])\s+'));
     final short = sentences.first;
     final actions = (result['recommended_actions'] as List? ?? [])
         .cast<String>();
@@ -514,10 +659,10 @@ class _TriageScreenState extends State<TriageScreen> {
                   ),
                   child: Icon(
                     urgent
-                        ? Icons.front_hand_rounded
+                        ? Symbols.front_hand_rounded
                         : low
-                        ? Icons.search_rounded
-                        : Icons.pause_rounded,
+                        ? Symbols.search_rounded
+                        : Symbols.pause_rounded,
                     color: color,
                     size: 30,
                   ),
@@ -546,7 +691,7 @@ class _TriageScreenState extends State<TriageScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.arrow_circle_right_outlined, color: color),
+                  Icon(Symbols.arrow_circle_right, color: color),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -564,13 +709,13 @@ class _TriageScreenState extends State<TriageScreen> {
             if ((result['coercion_markers'] as List? ?? []).isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
-                'Warning signs',
+                tr('Warning signs'),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               for (final marker in (result['coercion_markers'] as List).take(3))
                 Card(
                   child: ListTile(
-                    leading: Icon(Icons.warning_amber_rounded, color: color),
+                    leading: Icon(Symbols.warning_rounded, color: color),
                     title: Text(marker.toString()),
                   ),
                 ),
@@ -578,29 +723,46 @@ class _TriageScreenState extends State<TriageScreen> {
             if ((result['evidence_extracted'] as List? ?? []).isNotEmpty)
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
-                title: const Text('What you shared'),
+                title: Text(tr('What you shared')),
                 children: [
                   for (final evidence
                       in (result['evidence_extracted'] as List).take(3))
                     ListTile(
-                      leading: const Icon(Icons.format_quote),
+                      leading: const Icon(Symbols.format_quote),
                       title: Text(evidence.toString()),
                     ),
                 ],
               ),
             const SizedBox(height: 12),
             Text(
-              low
-                  ? 'This does not prove it is safe.'
-                  : 'AI can be wrong. Check independently.',
+              tr(
+                low
+                    ? 'This does not prove it is safe.'
+                    : 'AI can be wrong. Check independently.',
+              ),
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
-            TextButton.icon(
-              onPressed: () => _details(turn),
-              icon: const Icon(Icons.info_outline),
-              label: const Text('Why? Show details'),
+            Wrap(
+              children: [
+                TextButton.icon(
+                  onPressed: () => _toggleSpeaking(turn),
+                  icon: Icon(
+                    identical(_speaking, turn)
+                        ? Symbols.stop_circle
+                        : Symbols.volume_up,
+                  ),
+                  label: Text(
+                    identical(_speaking, turn) ? _t.stopReading : _t.readAloud,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => _details(turn),
+                  icon: const Icon(Symbols.info),
+                  label: Text(tr('Why? Show details')),
+                ),
+              ],
             ),
           ],
         ),
@@ -614,15 +776,15 @@ class _TriageScreenState extends State<TriageScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Row(
-          children: [
-            Icon(Icons.shield_outlined),
-            SizedBox(width: 10),
-            Text('Dhalam'),
-          ],
+          children: [Icon(Symbols.shield), SizedBox(width: 10), Text('Dhalam')],
         ),
         actions: [
+          LanguageMenuButton(
+            enabled: !_busy,
+            beforeChange: _beforeLanguageChange,
+          ),
           PopupMenuButton<String>(
-            tooltip: 'Chat options',
+            tooltip: tr('Chat options'),
             enabled: !_busy,
             onSelected: (choice) async {
               if (choice == 'connection') {
@@ -646,12 +808,12 @@ class _TriageScreenState extends State<TriageScreen> {
                 });
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'clear', child: Text('New chat')),
-              PopupMenuItem(value: 'device', child: Text('Device checks')),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'clear', child: Text(tr('New chat'))),
+              PopupMenuItem(value: 'device', child: Text(tr('Device checks'))),
               PopupMenuItem(
                 value: 'connection',
-                child: Text('Demo connection'),
+                child: Text(tr('Demo connection')),
               ),
             ],
           ),
@@ -679,17 +841,17 @@ class _TriageScreenState extends State<TriageScreen> {
                           borderRadius: BorderRadius.circular(32),
                         ),
                         child: Icon(
-                          Icons.forum_outlined,
+                          Symbols.forum,
                           size: 64,
                           color: colors.primary,
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Text(
-                      'Not sure?\nLet’s check together.',
+                    Text(
+                      _t.emptyTitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 30,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
@@ -697,7 +859,7 @@ class _TriageScreenState extends State<TriageScreen> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Tell me what happened, or show me a message.',
+                      _t.emptySubtitle,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 18,
@@ -712,32 +874,33 @@ class _TriageScreenState extends State<TriageScreen> {
                       runSpacing: 8,
                       children: [
                         ActionChip(
-                          avatar: const Icon(Icons.currency_rupee, size: 20),
-                          label: const Text('Someone wants money'),
+                          avatar: const Icon(Symbols.currency_rupee, size: 20),
+                          label: Text(tr('Someone wants money')),
                           onPressed: () {
-                            _message.text =
-                                'Someone is asking me to send money. ';
+                            _message.text = tr(
+                              'Someone is asking me to send money. ',
+                            );
                             setState(() {});
                           },
                         ),
                         ActionChip(
-                          avatar: const Icon(Icons.link, size: 20),
-                          label: const Text('I got a link'),
+                          avatar: const Icon(Symbols.link, size: 20),
+                          label: Text(tr('I got a link')),
                           onPressed: () {
-                            _message.text = 'Can you check this link? ';
+                            _message.text = tr('Can you check this link? ');
                             setState(() {});
                           },
                         ),
                         ActionChip(
-                          avatar: const Icon(Icons.image_outlined, size: 20),
-                          label: const Text('Check a screenshot'),
+                          avatar: const Icon(Symbols.image, size: 20),
+                          label: Text(tr('Check a screenshot')),
                           onPressed: () => _pick(ImageSource.gallery),
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'No need to decide in a hurry.',
+                      tr('No need to decide in a hurry.'),
                       textAlign: TextAlign.center,
                       style: TextStyle(color: colors.onSurfaceVariant),
                     ),
@@ -765,14 +928,14 @@ class _TriageScreenState extends State<TriageScreen> {
                                 ),
                               ),
                             if (turn['image'] != null)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 8),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.image_outlined),
-                                    SizedBox(width: 8),
-                                    Text('Photo shared'),
+                                    const Icon(Symbols.image),
+                                    const SizedBox(width: 8),
+                                    Text(tr('Photo shared')),
                                   ],
                                 ),
                               ),
@@ -780,23 +943,24 @@ class _TriageScreenState extends State<TriageScreen> {
                         ),
                       ),
                     ),
+                    ChatLinkPreview(text: turn['text'] as String),
                     if (turn['result'] != null) _answer(turn),
                   ],
                   if (_busy)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
                       child: Row(
                         children: [
-                          SizedBox(
+                          const SizedBox(
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                          SizedBox(width: 14),
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Text(
-                              'I’m checking. Take a breath.',
-                              style: TextStyle(fontSize: 18),
+                              _t.checking,
+                              style: const TextStyle(fontSize: 18),
                             ),
                           ),
                         ],
@@ -806,7 +970,7 @@ class _TriageScreenState extends State<TriageScreen> {
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        _error!,
+                        trText(_error!),
                         style: TextStyle(color: colors.error, fontSize: 18),
                       ),
                     ),
@@ -833,23 +997,28 @@ class _TriageScreenState extends State<TriageScreen> {
                             height: 52,
                             fit: BoxFit.cover,
                             errorBuilder: (_, error, stack) =>
-                                const Icon(Icons.image_outlined),
+                                const Icon(Symbols.image),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(child: Text('Photo ready to check')),
+                        Expanded(child: Text(tr('Photo ready to check'))),
                         IconButton(
-                          tooltip: 'Remove photo',
+                          tooltip: tr('Remove photo'),
                           onPressed: _busy
                               ? null
                               : () => setState(() {
                                   _image = null;
                                   _mime = null;
                                 }),
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(Symbols.close),
                         ),
                       ],
                     ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _message,
+                    builder: (context, value, _) =>
+                        ChatLinkPreview(text: value.text),
+                  ),
                   TextField(
                     controller: _message,
                     enabled: !_busy,
@@ -859,7 +1028,7 @@ class _TriageScreenState extends State<TriageScreen> {
                     maxLength: 12000,
                     style: const TextStyle(fontSize: 18),
                     decoration: InputDecoration(
-                      hintText: 'Type or paste a message…',
+                      hintText: _listening ? _t.listening : _t.hint,
                       counterText: '',
                       filled: true,
                       fillColor: colors.surfaceContainerLowest,
@@ -873,18 +1042,25 @@ class _TriageScreenState extends State<TriageScreen> {
                   Row(
                     children: [
                       IconButton(
-                        tooltip: 'Choose screenshot',
+                        tooltip: tr('Choose screenshot'),
                         onPressed: _busy
                             ? null
                             : () => _pick(ImageSource.gallery),
-                        icon: const Icon(Icons.image_outlined),
+                        icon: const Icon(Symbols.image),
                       ),
                       IconButton(
-                        tooltip: 'Take photo',
+                        tooltip: tr('Take photo'),
                         onPressed: _busy
                             ? null
                             : () => _pick(ImageSource.camera),
-                        icon: const Icon(Icons.camera_alt_outlined),
+                        icon: const Icon(Symbols.photo_camera),
+                      ),
+                      IconButton(
+                        tooltip: _listening ? _t.stopDictation : _t.dictate,
+                        isSelected: _listening,
+                        onPressed: _busy ? null : _toggleListening,
+                        icon: const Icon(Symbols.mic),
+                        selectedIcon: const Icon(Symbols.stop_circle),
                       ),
                       const Spacer(),
                       FilledButton.icon(
@@ -897,10 +1073,10 @@ class _TriageScreenState extends State<TriageScreen> {
                         style: FilledButton.styleFrom(
                           minimumSize: const Size(110, 48),
                         ),
-                        icon: const Icon(Icons.arrow_upward_rounded),
-                        label: const Text(
-                          'Check',
-                          style: TextStyle(fontSize: 18),
+                        icon: const Icon(Symbols.arrow_upward_rounded),
+                        label: Text(
+                          _t.check,
+                          style: const TextStyle(fontSize: 18),
                         ),
                       ),
                     ],
@@ -916,37 +1092,46 @@ class _TriageScreenState extends State<TriageScreen> {
 }
 
 String reputationLabel(String? status) => switch (status) {
-  'matched' => 'Google Safe Browsing flagged this URL. Avoid proceeding.',
-  'no_match' => 'No Safe Browsing match. This does not mean the link is safe.',
-  'unavailable' => 'URL reputation lookup unavailable; no reputation verdict.',
-  'not_configured' =>
+  'matched' => tr('Google Safe Browsing flagged this URL. Avoid proceeding.'),
+  'no_match' => tr(
+    'No Safe Browsing match. This does not mean the link is safe.',
+  ),
+  'unavailable' => tr(
+    'URL reputation lookup unavailable; no reputation verdict.',
+  ),
+  'not_configured' => tr(
     'URL reputation is not configured. AI reviewed the URL text only.',
-  _ => 'No URL reputation lookup requested.',
+  ),
+  _ => tr('No URL reputation lookup requested.'),
 };
 
 String referenceNotes(Map<String, dynamic> result) {
   final sources = result['sources'] as List? ?? [];
   if (sources.isEmpty) {
     return switch (result['grounding_status']) {
-      'no_match' =>
+      'no_match' => tr(
         'No close reference found in the small advisory collection. This does not establish safety.',
-      'matched' =>
+      ),
+      'matched' => tr(
         'Related references were retrieved, but none was cited for this advice.',
-      'not_requested' =>
+      ),
+      'not_requested' => tr(
         'No usable text was available for reference retrieval.',
-      _ =>
+      ),
+      _ => tr(
         'Reference retrieval unavailable. This answer is not backed by retrieved sources.',
+      ),
     };
   }
   final entries = sources
       .map(
         (source) =>
             '${source['publisher']} — ${source['title']}\n'
-            'Published: ${source['published']} · Reviewed: ${source['reviewed']}\n'
+            '${tr('Published: {p} · Reviewed: {r}', {'p': source['published'], 'r': source['reviewed']})}\n'
             '${source['summary']}\n${source['url']}',
       )
       .join('\n\n');
-  return 'Official guidance about reported patterns, not proof of the same scam or attacker.\n\n$entries';
+  return '${tr('Official guidance about reported patterns, not proof of the same scam or attacker.')}\n\n$entries';
 }
 
 String incidentReport(
@@ -954,41 +1139,59 @@ String incidentReport(
   String message,
   String url,
   String observations,
-) =>
-    '''DHALAM — PERSONAL CYBERCRIME INCIDENT NOTES
-Prepared: ${DateTime.now().toUtc().toIso8601String()}
-This is a user-reviewed draft, not an official complaint, forensic certification or proof of fraud.
-
-INCIDENT DETAILS — fill in before submitting
-Incident date/time and timezone:
-Contact method / sender identifier:
-Amount lost (if any):
-Bank / transaction reference (never include PINs, passwords or OTPs):
-Actions already taken:
-
-USER-SUBMITTED CONTENT
-Message: $message
-URL: $url
-Original screenshot: attach separately if relevant. Dhalam does not embed it in this report.
-
-AI ASSESSMENT — may be incorrect; observations below are separate
-Model: ${result['model']}
-Analyzed: ${result['analyzed_at']}
-Concern: ${result['threat_level']} (${result['scam_probability']}/100, uncalibrated)
-${result['summary']}
-Indicators: ${(result['coercion_markers'] as List? ?? []).join('; ')}
-Extracted content: ${(result['evidence_extracted'] as List? ?? []).join('; ')}
-Suggested actions: ${(result['recommended_actions'] as List? ?? []).join('; ')}
-${reputationLabel(result['url_reputation'] as String?)}
-${result['limitations'] ?? ''}
-
-REFERENCE GUIDANCE
-${referenceNotes(result)}
-
-LOCAL DEVICE OBSERVATIONS
-$observations
-
-REPORTING
-For suspected financial cyber fraud contact your bank and 1930 / https://cybercrime.gov.in.
-Preserve original messages, transaction references and screenshots. Review and redact this draft before sharing. No complaint has been filed by Dhalam.
-''';
+) => [
+  tr('DHALAM — PERSONAL CYBERCRIME INCIDENT NOTES'),
+  tr('Prepared: {t}', {'t': DateTime.now().toUtc().toIso8601String()}),
+  tr(
+    'This is a user-reviewed draft, not an official complaint, forensic certification or proof of fraud.',
+  ),
+  '',
+  tr('INCIDENT DETAILS — fill in before submitting'),
+  tr('Incident date/time and timezone:'),
+  tr('Contact method / sender identifier:'),
+  tr('Amount lost (if any):'),
+  tr('Bank / transaction reference (never include PINs, passwords or OTPs):'),
+  tr('Actions already taken:'),
+  '',
+  tr('USER-SUBMITTED CONTENT'),
+  tr('Message: {m}', {'m': message}),
+  tr('URL: {u}', {'u': url}),
+  tr(
+    'Original screenshot: attach separately if relevant. Dhalam does not embed it in this report.',
+  ),
+  '',
+  tr('AI ASSESSMENT — may be incorrect; observations below are separate'),
+  tr('Model: {m}', {'m': result['model']}),
+  tr('Analyzed: {t}', {'t': result['analyzed_at']}),
+  tr('Concern: {l} ({p}/100, uncalibrated)', {
+    'l': result['threat_level'],
+    'p': result['scam_probability'],
+  }),
+  '${result['summary']}',
+  tr('Indicators: {x}', {
+    'x': (result['coercion_markers'] as List? ?? []).join('; '),
+  }),
+  tr('Extracted content: {x}', {
+    'x': (result['evidence_extracted'] as List? ?? []).join('; '),
+  }),
+  tr('Suggested actions: {x}', {
+    'x': (result['recommended_actions'] as List? ?? []).join('; '),
+  }),
+  reputationLabel(result['url_reputation'] as String?),
+  '${result['limitations'] ?? ''}',
+  '',
+  tr('REFERENCE GUIDANCE'),
+  referenceNotes(result),
+  '',
+  tr('LOCAL DEVICE OBSERVATIONS'),
+  observations,
+  '',
+  tr('REPORTING'),
+  tr(
+    'For suspected financial cyber fraud contact your bank and 1930 / https://cybercrime.gov.in.',
+  ),
+  tr(
+    'Preserve original messages, transaction references and screenshots. Review and redact this draft before sharing. No complaint has been filed by Dhalam.',
+  ),
+  '',
+].join('\n');

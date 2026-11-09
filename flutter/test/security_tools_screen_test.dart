@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dhalam/features/security_tools.dart';
+import 'package:dhalam/l10n/app_language.dart';
+import 'package:dhalam/l10n/chat_language.dart';
 import 'package:dhalam/screens/security_tools_screen.dart';
 
 void main() {
@@ -9,6 +11,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   late List<String> shared;
   setUp(() {
+    appLanguage.value = chatLanguages.first;
     shared = [];
     messenger.setMockMethodCallHandler(toolsChannel, (call) async {
       if (call.method == 'captureStatus') return 'Active';

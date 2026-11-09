@@ -31,35 +31,36 @@ fun AskDhalamInput(
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 shape = RoundedCornerShape(24.dp),
-                label = { Text("Ask Dhalam") },
-                placeholder = { Text("Ask about an app or permission") },
+                label = { Text(trText("Ask Dhalam")) },
+                placeholder = { Text(trText("Ask about an app or permission")) },
                 enabled = !state.loading && !state.signingIn,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { if (!scanning && !state.signingIn && state.signedIn) onAsk() })
             )
             Button(onClick = onAsk, enabled = state.settingsReady && !state.loading &&
                 !scanning && !state.signingIn && state.question.isNotBlank() && state.signedIn,
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("Send") }
+                modifier = Modifier.heightIn(min = 48.dp)) { Text(trText("Send")) }
         }
-        Text("For suspicious messages, URLs and screenshots, use the Scam check tab.",
+        ChatLinkPreview(state.question)
+        Text(trText("For scam-pattern analysis of messages, URLs and screenshots, use the Scam check tab."),
             style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.signedIn) {
-                Text(state.accountLabel ?: "Signed in", modifier = Modifier.weight(1f).padding(top = 12.dp),
+                Text(trText(state.accountLabel ?: "Signed in"), modifier = Modifier.weight(1f).padding(top = 12.dp),
                     maxLines = 1, style = MaterialTheme.typography.bodySmall)
 
             } else {
                 OutlinedButton(onClick = onSignIn, enabled = !state.signingIn && !state.loading) {
-                    Text(if (state.signingIn) "Signing in…" else "Sign in with Google")
+                    Text(trText(if (state.signingIn) "Signing in…" else "Sign in with Google"))
                 }
             }
             if (state.loading || state.result != null || state.error != null || state.question.isNotBlank()) {
                 TextButton(onClick = { onClear() }) {
-                    Text(if (state.loading) "Cancel" else "Clear")
+                    Text(trText(if (state.loading) "Cancel" else "Clear"))
                 }
             }
         }
-        Text("Sending shares your question and selected scan facts with your backend and Google Gemini.",
+        Text(trText("Sending shares your question and selected scan facts with your backend and Google Gemini."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 4.dp))
     }
@@ -70,38 +71,38 @@ fun AskAnswerPanel(state: AskUiState, currentScanAt: Long?, onRetry: () -> Unit)
     var expanded by remember(state.result) { mutableStateOf(false) }
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ask Dhalam", style = MaterialTheme.typography.titleMedium)
+            Text(trText("Ask Dhalam"), style = MaterialTheme.typography.titleMedium)
             state.submittedQuestion?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (state.loading) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text("Preparing an answer…")
+                Text(trText("Preparing an answer…"))
             }
             state.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = onRetry, enabled = !state.loading) { Text("Retry") }
+                Text(trText(it), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onRetry, enabled = !state.loading) { Text(trText("Retry")) }
             }
             state.result?.let { result ->
                 Text(result.answer, maxLines = if (expanded) Int.MAX_VALUE else 6)
-                Text("Based on ${result.evidenceCount} selected facts · " +
-                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(result.observedAt)),
+                Text(trText("Based on ${result.evidenceCount} selected facts · " +
+                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(result.observedAt))),
                     style = MaterialTheme.typography.bodySmall)
                 if (currentScanAt != null && currentScanAt != result.observedAt) {
-                    Text("A newer scan is available. Send again for an updated answer.",
+                    Text(trText("A newer scan is available. Send again for an updated answer."),
                         style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Show less" else "Details and evidence") }
+                TextButton(onClick = { expanded = !expanded }) { Text(trText(if (expanded) "Show less" else "Details and evidence")) }
                 if (expanded) {
                     result.findings.forEach { finding ->
-                        Text("${finding.title} · ${finding.severity}", style = MaterialTheme.typography.titleSmall)
-                        Text(finding.explanation)
+                        Text(trText("${finding.title} · ${finding.severity}"), style = MaterialTheme.typography.titleSmall)
+                        Text(trText(finding.explanation))
                         finding.sources.forEach { fact ->
-                            Text("Evidence: ${fact.detail}\n${fact.subjectId} · ${fact.status}",
+                            Text(trText("Evidence: ${fact.detail}\n${fact.subjectId} · ${fact.status}"),
                                 style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    result.recommendations.forEach { Text("• $it") }
-                    result.limitations.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    Text("This is an AI explanation of observed exposure, not proof of a scam. Risk scoring is not available yet.",
+                    result.recommendations.forEach { Text(trText("• $it")) }
+                    result.limitations.forEach { Text(trText(it), style = MaterialTheme.typography.bodySmall) }
+                    Text(trText("This is an AI explanation of observed exposure, not proof of a scam. Risk scoring is not available yet."),
                         style = MaterialTheme.typography.bodySmall)
                 }
             }

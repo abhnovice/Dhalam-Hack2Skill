@@ -89,6 +89,21 @@ redirects. No Safe Browsing match must never be presented as proof of safety.
 
 ## 9. Screenshot
 
+The sample is a realistic phone-chat mockup with incoming/outgoing bubbles,
+timestamps and a small fictional-demo label. It shows an unknown sender claiming
+to be an investigating officer, pressuring the recipient to stay on a call,
+hide it from family, share their screen and transfer money within 20 minutes.
+
 Select `synthetic-message.png` from Pictures. Leave the message box blank to exercise
 image-only analysis. Review consent before submitting. Look for recognition of
 the visible demands; the model must not invent logos, identities or police records.
+
+To refresh a device's copy after changing the screenshot:
+
+```bash
+adb push docs/interact-with-app/synthetic-message.png /sdcard/Pictures/synthetic-message.png
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/synthetic-message.png
+```
+
+Run from the repository root. If multiple devices are connected, add `-s <serial>`
+after `adb`. Pick the refreshed image in the app before submitting.

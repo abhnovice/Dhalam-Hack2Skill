@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_language.dart';
 import '../models/security_models.dart';
 
 class SensitivePermissionChart extends StatelessWidget {
@@ -22,10 +23,10 @@ class SensitivePermissionChart extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Sensitive permissions',
+              tr('Sensitive permissions'),
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const Text('Apps with granted access · tap to review'),
+            Text(tr('Apps with granted access · tap to review')),
             for (final entry in permissions.entries)
               Builder(
                 builder: (context) {
@@ -42,9 +43,9 @@ class SensitivePermissionChart extends StatelessWidget {
                     tilePadding: EdgeInsets.zero,
                     title: Row(
                       children: [
-                        Expanded(child: Text(entry.key)),
+                        Expanded(child: Text(tr(entry.key))),
                         Text(
-                          count?.toString() ?? 'Not observed',
+                          count?.toString() ?? tr('Not observed'),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -55,15 +56,21 @@ class SensitivePermissionChart extends StatelessWidget {
                             value: inventory.packageCount == 0
                                 ? 0
                                 : (count / inventory.packageCount).clamp(0, 1),
-                            semanticsLabel:
-                                '${entry.key}: $count of ${inventory.packageCount} visible apps have granted access',
+                            semanticsLabel: tr(
+                              '{name}: {count} of {n} visible apps have granted access',
+                              {
+                                'name': tr(entry.key),
+                                'count': count,
+                                'n': inventory.packageCount,
+                              },
+                            ),
                           ),
                     children: [
                       if (report == null)
-                        const Text('This permission was not observed.')
+                        Text(tr('This permission was not observed.'))
                       else if (count == 0)
-                        const Text(
-                          'No granted access reported among visible apps.',
+                        Text(
+                          tr('No granted access reported among visible apps.'),
                         )
                       else
                         for (final app in report.apps.where(
@@ -78,7 +85,9 @@ class SensitivePermissionChart extends StatelessWidget {
                 },
               ),
             Text(
-              'Out of ${inventory.packageCount} visible apps. Access does not mean use.',
+              tr('Out of {n} visible apps. Access does not mean use.', {
+                'n': inventory.packageCount,
+              }),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

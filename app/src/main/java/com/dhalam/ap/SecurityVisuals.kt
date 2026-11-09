@@ -24,22 +24,23 @@ val sensitivePermissions = linkedMapOf(
 fun SensitivePermissionChart(inventory: PermissionInventory, onSelect: (String) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Sensitive permissions", style = MaterialTheme.typography.titleMedium)
-            Text("Apps with granted access · tap a row to review", style = MaterialTheme.typography.bodySmall)
+            Text(trText("Sensitive permissions"), style = MaterialTheme.typography.titleMedium)
+            Text(trText("${inventory.packageCount} visible apps · tap to explore"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             sensitivePermissions.forEach { (label, permission) ->
                 val report = inventory.permissions.firstOrNull { it.name == permission }
                 val count = report?.apps?.filter { it.granted == true }?.map { it.packageName }?.distinct()?.size
                 TextButton(onClick = { onSelect(permission) }, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 2.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(label, color = MaterialTheme.colorScheme.onSurface)
-                            Text(count?.toString() ?: "Not observed")
-                        }
-                        if (count != null) LinearProgressIndicator(progress = { (count.toFloat() / inventory.packageCount.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(6.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(trText(label), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        if (count != null) {
+                            LinearProgressIndicator(progress = { (count.toFloat() / inventory.packageCount.coerceAtLeast(1)).coerceIn(0f, 1f) },
+                                modifier = Modifier.weight(1f).height(4.dp), gapSize = 0.dp, drawStopIndicator = {})
+                            Text(trText(count.toString()), modifier = Modifier.width(28.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.titleSmall)
+                        } else Text(trText("Not observed"), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
-            Text("Out of ${inventory.packageCount} visible apps. Access does not mean use.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(trText("Granted access does not mean actual use."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -52,7 +53,7 @@ fun FindingsOverview(findings: List<SecurityFinding>, selected: String?, onSelec
     val track = MaterialTheme.colorScheme.outlineVariant
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         Box(Modifier.size(100.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(84.dp).semantics { contentDescription = "${findings.size} recorded checks; breakdown follows" }) {
+            Canvas(Modifier.size(84.dp).semantics { contentDescription = tr("{n} recorded checks; breakdown follows", mapOf("n" to findings.size)) }) {
                 if (findings.isEmpty()) drawArc(track, 0f, 360f, false, style = Stroke(12.dp.toPx()))
                 var start = -90f
                 counts.forEachIndexed { index, count ->
@@ -61,12 +62,12 @@ fun FindingsOverview(findings: List<SecurityFinding>, selected: String?, onSelec
                     start += sweep
                 }
             }
-            Text(findings.size.toString(), style = MaterialTheme.typography.headlineMedium)
+            Text(trText(findings.size.toString()), style = MaterialTheme.typography.headlineMedium)
         }
         Column(Modifier.weight(1f)) {
-            Text("Your device review", style = MaterialTheme.typography.titleMedium)
-            Text("${counts.first()} need attention", style = MaterialTheme.typography.bodyLarge)
-            Text("Recorded checks, not a safety score", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(trText("Your device review"), style = MaterialTheme.typography.titleMedium)
+            Text(trText("${counts.first()} need attention"), style = MaterialTheme.typography.bodyLarge)
+            Text(trText("Recorded checks, not a safety score"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     states.chunked(2).forEach { pair ->
@@ -76,8 +77,8 @@ fun FindingsOverview(findings: List<SecurityFinding>, selected: String?, onSelec
                 OutlinedCard(onClick = { onSelect(if (chosen) null else state) }, modifier = Modifier.weight(1f),
                     colors = CardDefaults.outlinedCardColors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(findings.count { it.state == state }.toString(), style = MaterialTheme.typography.titleLarge)
-                        Text(state, style = MaterialTheme.typography.labelLarge)
+                        Text(trText(findings.count { it.state == state }.toString()), style = MaterialTheme.typography.titleLarge)
+                        Text(trText(state), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_language.dart';
 import '../models/security_models.dart';
 
 const toolsChannel = MethodChannel('com.dhalam.ap/tools');
@@ -261,22 +262,31 @@ class SecurityJournal extends ChangeNotifier {
   List<String> changesAt(int index) {
     if (index < 0 || index >= records.length) return [];
     if (index + 1 >= records.length) {
-      return ['Run another check to compare observations.'];
+      return [tr('Run another check to compare observations.')];
     }
     final before = {for (final f in records[index + 1].findings) f.title: f};
     final changes = <String>[];
     for (final f in records[index].findings) {
       final old = before[f.title];
       if (old == null) {
-        changes.add('${f.title}: first observation.');
+        changes.add(tr('{t}: first observation.', {'t': trText(f.title)}));
         continue;
       }
       if (old.state == 'Unavailable' || f.state == 'Unavailable') {
         changes.add(
-          '${f.title}: comparison unavailable; one of the two reads was unavailable.',
+          tr(
+            '{t}: comparison unavailable; one of the two reads was unavailable.',
+            {'t': trText(f.title)},
+          ),
         );
       } else if (old.detail != f.detail) {
-        changes.add('${f.title}: ${old.detail} → ${f.detail}');
+        changes.add(
+          tr('{t}: {old} → {new}', {
+            't': trText(f.title),
+            'old': trText(old.detail),
+            'new': trText(f.detail),
+          }),
+        );
       }
     }
     final currentAccess = records[index].access,
@@ -297,42 +307,52 @@ class SecurityJournal extends ChangeNotifier {
         for (final key in keys) {
           final old = previousAccess[key], now = currentAccess[key];
           if (old == now) continue;
+          String shown(String? value) => value == null
+              ? tr('not observed')
+              : value.split(', ').map(tr).join(', ');
           changes.add(
-            '$key: ${old ?? 'not observed'} → ${now ?? 'not observed'} (visibility can change; not proof of misuse)',
+            tr(
+              '{key}: {old} → {new} (visibility can change; not proof of misuse)',
+              {'key': key, 'old': shown(old), 'new': shown(now)},
+            ),
           );
         }
       }
     }
-    return changes.isEmpty ? ['No changes in the comparable checks.'] : changes;
+    return changes.isEmpty
+        ? [tr('No changes in the comparable checks.')]
+        : changes;
   }
 
   String report(bool ios) {
     final b = StringBuffer(
-      'Dhalam security report\nGenerated: ${DateTime.now().toUtc().toIso8601String()}\nPlatform: ${ios ? 'iOS' : 'Android'}\nConfiguration observations, not a malware scan or safety verdict.\nHistory contains the latest 30 successful foreground checks. New records include observed service IDs and permission states; older records contain summaries only.\n\n',
+      '${tr('Dhalam security report')}\n${tr('Generated: {t}', {'t': DateTime.now().toUtc().toIso8601String()})}\n${tr('Platform: {p}', {'p': tr(ios ? 'iOS' : 'Android')})}\n${tr('Configuration observations, not a malware scan or safety verdict.')}\n${tr('History contains the latest 30 successful foreground checks. New records include observed service IDs and permission states; older records contain summaries only.')}\n\n',
     );
-    if (storageError != null) b.writeln(storageError);
-    b.writeln('CHANGES SINCE PREVIOUS CHECK');
+    if (storageError != null) b.writeln(trText(storageError!));
+    b.writeln(tr('CHANGES SINCE PREVIOUS CHECK'));
     for (final c in changes) {
       b.writeln(c);
     }
-    b.writeln('\nOBSERVATIONS (newest first)');
-    if (records.isEmpty) b.writeln('No check recorded.');
+    b.writeln('\n${tr('OBSERVATIONS (newest first)')}');
+    if (records.isEmpty) b.writeln(tr('No check recorded.'));
     for (final r in records) {
-      b.writeln('\nChecked: ${stamp(r.at)}');
+      b.writeln('\n${tr('Checked: {t}', {'t': stamp(r.at)})}');
       for (final f in r.findings) {
         b.writeln(
-          '${f.title} [${f.state}]: ${f.detail}\nNext step: ${f.action}',
+          '${trText(f.title)} [${trText(f.state)}]: ${trText(f.detail)}\n${tr('Next step: {a}', {'a': trText(f.action)})}',
         );
       }
     }
-    b.writeln('\nMANUAL REVIEW — user-confirmed, not automatically verified');
+    b.writeln(
+      '\n${tr('MANUAL REVIEW — user-confirmed, not automatically verified')}',
+    );
     for (final entry in reviewSteps(ios).entries) {
       b.writeln(
-        '${entry.key}: ${reviewed[entry.key] == null ? 'Not confirmed' : 'User-confirmed ${stamp(reviewed[entry.key]!)}'}',
+        '${trText(entry.key)}: ${reviewed[entry.key] == null ? tr('Not confirmed') : tr('User-confirmed {t}', {'t': stamp(reviewed[entry.key]!)})}',
       );
     }
     b.writeln(
-      '\nUnavailable readings are not passing results. Capture observations only describe supported detection while Dhalam is visible. Pasted links are never included in this report.',
+      '\n${tr('Unavailable readings are not passing results. Capture observations only describe supported detection while Dhalam is visible. Pasted links are never included in this report.')}',
     );
     return b.toString();
   }
@@ -372,7 +392,9 @@ LinkInspection inspectLink(String input) {
       text.length > 4096 ||
       RegExp(r'[\s\x00-\x1f\x7f\\]').hasMatch(text)) {
     return LinkInspection('', [
-      'Enter one URL up to 4096 characters without spaces, control characters or backslashes.',
+      tr(
+        'Enter one URL up to 4096 characters without spaces, control characters or backslashes.',
+      ),
     ]);
   }
   final uri = Uri.tryParse(text.contains('://') ? text : 'https://$text');
@@ -380,21 +402,23 @@ LinkInspection inspectLink(String input) {
       !['http', 'https'].contains(uri.scheme) ||
       uri.host.isEmpty) {
     return LinkInspection('', [
-      'Only a valid HTTP or HTTPS URL can be inspected.',
+      tr('Only a valid HTTP or HTTPS URL can be inspected.'),
     ]);
   }
   String host;
   try {
     host = Uri.decodeComponent(uri.host).toLowerCase();
   } on FormatException {
-    return LinkInspection('', ['Invalid encoded hostname.']);
+    return LinkInspection('', [tr('Invalid encoded hostname.')]);
   }
   if ((uri.hasPort && (uri.port < 1 || uri.port > 65535)) ||
       RegExp(
         r'[\s\x00-\x1f\x7f\\/@?#%\u202a-\u202e\u2066-\u2069]',
       ).hasMatch(host)) {
     return LinkInspection('', [
-      'Ambiguous hostname or invalid port. Verify the address independently.',
+      tr(
+        'Ambiguous hostname or invalid port. Verify the address independently.',
+      ),
     ]);
   }
   if (!host.contains(':')) {
@@ -410,47 +434,58 @@ LinkInspection inspectLink(String input) {
           !RegExp(r'^[a-z0-9\u0080-\uffff-]+$').hasMatch(label),
     )) {
       return LinkInspection('', [
-        'Invalid hostname. Verify the address independently.',
+        tr('Invalid hostname. Verify the address independently.'),
       ]);
     }
   }
   final notes = <String>[];
   if (!text.contains('://')) {
-    notes.add('No scheme supplied; interpreted as HTTPS for display only.');
+    notes.add(tr('No scheme supplied; interpreted as HTTPS for display only.'));
   }
   if (uri.scheme == 'http') {
-    notes.add('HTTP does not provide HTTPS transport encryption.');
+    notes.add(tr('HTTP does not provide HTTPS transport encryption.'));
   }
   if (uri.userInfo.isNotEmpty) {
     notes.add(
-      'Contains user information before @. The destination is $host, not the text before @.',
+      tr(
+        'Contains user information before @. The destination is {host}, not the text before @.',
+        {'host': host},
+      ),
     );
   }
   if (RegExp(r'[^\x00-\x7f]').hasMatch(host) || host.contains('xn--')) {
     notes.add(
-      'Internationalized hostname: check for look-alike letters or encoded domain labels.',
+      tr(
+        'Internationalized hostname: check for look-alike letters or encoded domain labels.',
+      ),
     );
   }
   if (host.split('.').length > 3) {
     notes.add(
-      'Many domain labels: brand names on the left can be misleading. Verify the entire hostname independently.',
+      tr(
+        'Many domain labels: brand names on the left can be misleading. Verify the entire hostname independently.',
+      ),
     );
   }
   if (RegExp(r'^\d+(\.\d+){3}$').hasMatch(host) ||
       host.contains(':') ||
       RegExp(r'^\d+$').hasMatch(host)) {
-    notes.add('Numeric/IP destination: verify who operates it.');
+    notes.add(tr('Numeric/IP destination: verify who operates it.'));
   }
   if (uri.hasPort && ![80, 443].contains(uri.port)) {
-    notes.add('Uses an unusual port: ${uri.port}.');
+    notes.add(tr('Uses an unusual port: {port}.', {'port': uri.port}));
   }
   if (notes.isEmpty) {
     notes.add(
-      'No listed structural indicators found. This does not establish that the link is safe.',
+      tr(
+        'No listed structural indicators found. This does not establish that the link is safe.',
+      ),
     );
   }
   notes.add(
-    'No website was opened or fetched. Redirects, reputation and page content were not checked. HTTPS alone does not mean trustworthy.',
+    tr(
+      'No website was opened or fetched. Redirects, reputation and page content were not checked. HTTPS alone does not mean trustworthy.',
+    ),
   );
   return LinkInspection(
     host,

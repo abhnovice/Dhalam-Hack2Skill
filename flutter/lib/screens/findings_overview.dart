@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../features/security_tools.dart';
+import '../l10n/app_language.dart';
 
 class FindingsOverview extends StatelessWidget {
   final List<Finding> findings;
@@ -33,7 +34,9 @@ class FindingsOverview extends StatelessWidget {
           child: Row(
             children: [
               Semantics(
-                label: '${findings.length} recorded checks; breakdown follows',
+                label: tr('{n} recorded checks; breakdown follows', {
+                  'n': findings.length,
+                }),
                 child: SizedBox(
                   width: 100,
                   height: 100,
@@ -57,12 +60,12 @@ class FindingsOverview extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Your device review',
+                      tr('Your device review'),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    Text('${counts.first} need attention'),
+                    Text(tr('{n} need attention', {'n': counts.first})),
                     Text(
-                      'Recorded checks, not a safety score',
+                      tr('Recorded checks, not a safety score'),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -104,7 +107,7 @@ class FindingsOverview extends StatelessWidget {
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               Text(
-                                states[index],
+                                trText(states[index]),
                                 style: Theme.of(context).textTheme.labelLarge,
                               ),
                             ],

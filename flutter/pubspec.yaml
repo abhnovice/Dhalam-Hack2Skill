@@ -35,6 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   image_picker: ^1.2.0
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
+  google_fonts: ^8.1.0
+  material_symbols_icons: ^4.2960.0
 
 dev_dependencies:
   flutter_test:
@@ -57,15 +61,6 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
-  assets:
-    - assets/fonts/OFL.txt
-  fonts:
-    - family: IBM Plex Sans
-      fonts:
-        - asset: assets/fonts/ibm_plex_sans_regular.ttf
-          weight: 400
-        - asset: assets/fonts/ibm_plex_sans_semibold.ttf
-          weight: 600
 
   # To add assets to your application, add an assets section, like this:
   # assets:

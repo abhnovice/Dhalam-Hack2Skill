@@ -7,7 +7,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from .config import settings
-from .schemas import ThreatAnalysisRequest, ThreatAnalysisResponse, ModelAssessment
+from .schemas import SUPPORTED_LANGUAGES, ThreatAnalysisRequest, ThreatAnalysisResponse, ModelAssessment
 from .retrieval import retrieve
 
 SYSTEM_INSTRUCTION = '''You are Dhalam, a cautious scam-triage assistant for people in India.
@@ -44,13 +44,20 @@ async def analyze_threat(request: ThreatAnalysisRequest) -> ThreatAnalysisRespon
     query = '\n'.join(value for value in (request.text, request.url) if value)
     documents, status = await retrieve(query)
 
+    instruction = SYSTEM_INSTRUCTION
+    if request.language != 'en':
+        instruction += (f"\nWrite summary, coercion_markers, recommended_actions and limitations in "
+                        f"{SUPPORTED_LANGUAGES[request.language]}, using simple everyday words. "
+                        "Keep enum values, source_ids and JSON keys in English. "
+                        "The user may write in that language or in English.")
+
     async def generate(references):
         async with get_client().aio as client:
             response = await client.models.generate_content(
                 model=settings.DEFAULT_MODEL,
                 contents=contents + [json.dumps({'retrieved_references': references})],
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=instruction,
                     response_mime_type='application/json', response_schema=ModelAssessment,
                     temperature=0.2, max_output_tokens=4096,
                 ),

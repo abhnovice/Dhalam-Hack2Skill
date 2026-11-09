@@ -8,11 +8,17 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
+# Allow-list: the value is interpolated into the model instruction, so never accept free text.
+SUPPORTED_LANGUAGES = {
+    'en': 'English', 'hi': 'Hindi', 'mr': 'Marathi',
+    'bn': 'Bengali', 'ta': 'Tamil', 'te': 'Telugu',
+}
 
 
 class ThreatAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     consent: bool = False
+    language: Literal['en', 'hi', 'mr', 'bn', 'ta', 'te'] = 'en'
     text: str | None = Field(None, max_length=12000)
     url: str | None = Field(None, max_length=4096)
     image_base64: str | None = Field(None, max_length=5592408)

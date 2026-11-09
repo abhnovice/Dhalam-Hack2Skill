@@ -3,6 +3,7 @@
 !requirements.txt
 !__init__.py
 !app.py
+!whatsapp.py
 !triage/
 !triage/*.py
 !triage/references.json

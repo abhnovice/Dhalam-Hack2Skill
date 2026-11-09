@@ -6,6 +6,14 @@ Run `flutter pub get`, then `flutter run -d <device-id>` from this directory.
 Use `flutter devices` to list devices. For a physical iPhone, configure the Runner
 signing team and a unique bundle identifier in `ios/Runner.xcworkspace` using Xcode.
 
+The app-wide translate menu offers English, Hindi, Marathi, Bengali, Tamil and
+Telugu on chat, dashboard and tools screens. Finding states remain unchanged in
+local history and are translated when drawn. Translation source lives in
+`../tools/i18n/*.json`; regenerate both clients with
+`python3 ../tools/i18n/generate.py`. Noto Sans comes from Google Fonts and is
+cached after its first download. Voice input and read-aloud use platform speech
+services; each language needs compatible speech data on the device.
+
 ## Available checks
 
 | Check | iOS | Android |
@@ -43,8 +51,9 @@ unenrolled biometrics, temporary biometric lockout, and notification permission
 allowed/denied. Return from Settings and verify notification status refreshes;
 device observations refresh after returning from a Settings shortcut opened inside Dhalam. Use Run security check after other changes.
 
-Both the Android debug APK and unsigned iOS release build have been compiled
-successfully. Signing and physical-device checks are required before distribution.
+The Android release APK was rebuilt on 9 November 2026 and signed with the
+Android debug key for demo use. The iOS `.ipa` predates the voice and language
+changes. A current device package requires Apple signing and physical-device checks.
 
 ## Security tools
 
@@ -95,8 +104,11 @@ six submissions); earlier images are not resent. New chat clears the in-memory
 conversation. Submissions are not saved in the local journal.
 Device inventories are never included in Flutter cloud requests.
 
-The hosted Cloud Run URL is configured in the prebuilt release packages (`https://dhalam-api-xxpghctsqq-el.a.run.app`).
-For custom builds, pass `--dart-define=DHALAM_API_URL=https://dhalam-api-xxpghctsqq-el.a.run.app` to `flutter build apk` or `flutter build ipa`.
+The prebuilt release packages point to Cloud Run
+(`https://dhalam-api-xxpghctsqq-el.a.run.app`), but hosted AI calls return 401
+because Flutter does not yet send the required Google ID token. For an AI demo,
+run a local backend and use the debug build as described in
+[the interaction guide](../docs/interact-with-app/README.md).
 Prebuilt artifacts are in `../build/apks/dhalam-flutter-android.apk` and `../build/apks/dhalam-flutter-ios.ipa`.
 
 Results distinguish the uncalibrated AI concern score, extracted evidence,
@@ -124,7 +136,8 @@ Sensitive-permission filtering is a review aid, not a malware classification.
 - Regression tests cover consent, no telemetry in cloud requests, capture
   transitions and event/poll ordering, opt-in background controls, and
   identity-preserving journal comparisons.
-- Android debug APK and unsigned iOS device release compiled on November 7, 2026.
+- `flutter analyze` is clean and all 30 Flutter tests passed on 9 November 2026.
+- Android release APK rebuilt on 9 November 2026; the iOS device archive is stale.
 - iOS minimum deployment target is 15.0 to match the installed Xcode 27 toolchain.
 - Physical camera/gallery, capture callbacks, Settings return and sharing still
   need testing on real Android and iOS devices. An unsigned iOS build is not installable.
@@ -136,3 +149,6 @@ Sensitive-permission filtering is a review aid, not a malware classification.
 - Scam triage can now retrieve official RBI reference guidance through the backend.
   Sources and fallback status appear under Why? and in incident reports; these
   references do not establish a match to a specific past incident.
+- Cloud Run now requires a verified Google ID token from an allowed account for
+  AI requests. This Flutter client does not yet provide that authentication flow,
+  so its hosted AI requests return 401 until the client is updated.

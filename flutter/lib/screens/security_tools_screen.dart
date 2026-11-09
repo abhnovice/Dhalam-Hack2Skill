@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../features/security_tools.dart';
+import '../l10n/app_language.dart';
 import 'triage_screen.dart';
 import 'findings_overview.dart';
 
@@ -17,7 +19,7 @@ class SecurityToolsScreen extends StatefulWidget {
 }
 
 class _SecurityToolsScreenState extends State<SecurityToolsScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, LanguageListener {
   Timer? _timer;
   String _capture = "Unavailable";
   bool _active = true;
@@ -52,8 +54,10 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
   }
 
   final _url = TextEditingController();
-  LinkInspection? _inspection;
-  String? _report;
+  // The inspection and the report are rebuilt from these flags every time the
+  // screen is drawn, so they follow the selected language.
+  bool _inspected = false;
+  bool _showReport = false;
   bool _busy = false;
   String? _findingFilter;
   @override
@@ -71,8 +75,10 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not complete this action. Please try again.'),
+          SnackBar(
+            content: Text(
+              tr('Could not complete this action. Please try again.'),
+            ),
           ),
         );
       }
@@ -83,20 +89,65 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
 
   Widget _list(List<Widget> children, {Key? key}) =>
       ListView(key: key, padding: const EdgeInsets.all(16), children: children);
+
+  Widget _inspection(BuildContext context) {
+    final inspection = inspectLink(_url.text);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr('Actual hostname')),
+                SelectableText(
+                  inspection.host.isEmpty
+                      ? tr('Unavailable — invalid input')
+                      : inspection.host,
+                  style: Theme.of(context).textTheme.titleLarge,
+                  textDirection: TextDirection.ltr,
+                ),
+                if (inspection.host.isNotEmpty) ...[
+                  const Divider(),
+                  Text(
+                    tr('Scheme: {scheme} · transport only, not trust', {
+                      'scheme': inspection.scheme,
+                    }),
+                  ),
+                  SelectableText(
+                    tr('Path: {path}', {'path': inspection.path}),
+                    textDirection: TextDirection.ltr,
+                  ),
+                ],
+                Text(tr('Inspected locally; link not opened.')),
+              ],
+            ),
+          ),
+        ),
+        for (final note in inspection.notes)
+          ListTile(leading: const Icon(Symbols.info), title: Text(note)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => DefaultTabController(
     length: 5,
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('Security tools'),
-        bottom: const TabBar(
+        title: Text(tr('Security tools')),
+        actions: const [LanguageMenuButton()],
+        bottom: TabBar(
           isScrollable: true,
           tabs: [
-            Tab(text: 'Findings'),
-            Tab(text: 'History'),
-            Tab(text: 'Privacy review'),
-            Tab(text: 'Link inspector'),
-            Tab(text: 'Report'),
+            Tab(text: tr('Findings')),
+            Tab(text: tr('History')),
+            Tab(text: tr('Link inspector')),
+            Tab(text: tr('Privacy review')),
+            Tab(text: tr('Report')),
           ],
         ),
       ),
@@ -105,20 +156,23 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
           listenable: widget.journal,
           builder: (context, _) {
             final j = widget.journal;
+            final report = _showReport ? j.report(widget.ios) : null;
             return Column(
               children: [
                 if (_capture == 'Active')
-                  const Padding(
-                    padding: EdgeInsets.all(12),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
                     child: Text(
-                      'Dhalam is visible in a capture session. Stop recording or sharing before viewing private reports if unintended.',
+                      tr(
+                        'Dhalam is visible in a capture session. Stop recording or sharing before viewing private reports if unintended.',
+                      ),
                     ),
                   ),
                 if (j.storageError != null)
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Text(
-                      j.storageError!,
+                      trText(j.storageError!),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                       ),
@@ -129,7 +183,7 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                     children: [
                       _list([
                         if (j.records.isEmpty)
-                          const Text('Run a scan to see your device review.'),
+                          Text(tr('Run a scan to see your device review.')),
                         if (j.records.isNotEmpty) ...[
                           FindingsOverview(
                             findings: j.records.first.findings,
@@ -139,22 +193,23 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Observed ${MaterialLocalizations.of(context).formatShortDate(DateTime.fromMillisecondsSinceEpoch(j.records.first.at))} · ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(j.records.first.at)).format(context)}',
+                            tr('Observed {time}', {
+                              'time':
+                                  '${MaterialLocalizations.of(context).formatShortDate(DateTime.fromMillisecondsSinceEpoch(j.records.first.at))} · ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(j.records.first.at)).format(context)}',
+                            }),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           if (_findingFilter != null)
                             TextButton(
                               onPressed: () =>
                                   setState(() => _findingFilter = null),
-                              child: const Text('Show all findings'),
+                              child: Text(tr('Show all findings')),
                             ),
                           if (_findingFilter != null &&
                               !j.records.first.findings.any(
                                 (f) => f.state == _findingFilter,
                               ))
-                            const Text(
-                              'No recorded findings in this category.',
-                            ),
+                            Text(tr('No recorded findings in this category.')),
                         ],
                         for (final f
                             in (j.records.firstOrNull?.findings ?? <Finding>[])
@@ -167,7 +222,7 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                             color: Theme.of(context).colorScheme.surface,
                             child: ExpansionTile(
                               title: Text(
-                                '${f.title} · ${f.state}',
+                                '${trText(f.title)} · ${trText(f.state)}',
                                 style: Theme.of(context).textTheme.titleSmall,
                               ),
                               childrenPadding: const EdgeInsets.fromLTRB(
@@ -179,11 +234,15 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                               expandedCrossAxisAlignment:
                                   CrossAxisAlignment.start,
                               children: [
-                                Text(f.detail),
+                                Text(trText(f.detail)),
                                 const SizedBox(height: 8),
-                                Text(f.action),
+                                Text(trText(f.action)),
                                 Text(
-                                  'Last readable result: ${j.lastSuccess(f.title) == null ? 'Never recorded' : stamp(j.lastSuccess(f.title)!)}',
+                                  tr('Last readable result: {value}', {
+                                    'value': j.lastSuccess(f.title) == null
+                                        ? tr('Never recorded')
+                                        : stamp(j.lastSuccess(f.title)!),
+                                  }),
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ],
@@ -192,40 +251,50 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                       ]),
                       _list([
                         Text(
-                          'Changes since previous check',
+                          tr('Changes since previous check'),
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const Text(
-                          'Times show when a change was observed, not when it happened.',
+                        Text(
+                          tr(
+                            'Times show when a change was observed, not when it happened.',
+                          ),
                         ),
-                        const Text(
-                          'Last 30 successful foreground checks, stored locally. New checks retain service IDs and permission states. Missing apps may reflect visibility changes, not removal. Times are UTC.',
+                        Text(
+                          tr(
+                            'Last 30 successful foreground checks, stored locally. New checks retain service IDs and permission states. Missing apps may reflect visibility changes, not removal. Times are UTC.',
+                          ),
                         ),
                         if (j.records.isEmpty)
-                          const Text('No checks recorded yet.'),
+                          Text(tr('No checks recorded yet.')),
                         for (var index = 0; index < j.records.length; index++)
                           Card(
                             child: ExpansionTile(
-                              leading: const Icon(Icons.history),
+                              leading: const Icon(Symbols.history),
                               title: Text(
-                                'Observed at ${stamp(j.records[index].at)}',
+                                tr('Observed at {time}', {
+                                  'time': stamp(j.records[index].at),
+                                }),
                               ),
                               subtitle: Text(
                                 index == j.records.length - 1
-                                    ? 'First retained observation'
+                                    ? tr('First retained observation')
                                     : j.changesAt(index).first,
                               ),
                               children: [
                                 if (index < j.records.length - 1)
                                   for (final change in j.changesAt(index))
                                     ListTile(
-                                      leading: const Icon(Icons.compare_arrows),
+                                      leading: const Icon(
+                                        Symbols.compare_arrows,
+                                      ),
                                       title: Text(change),
                                     ),
                                 for (final f in j.records[index].findings)
                                   ListTile(
-                                    title: Text('${f.title} · ${f.state}'),
-                                    subtitle: Text(f.detail),
+                                    title: Text(
+                                      '${trText(f.title)} · ${trText(f.state)}',
+                                    ),
+                                    subtitle: Text(trText(f.detail)),
                                   ),
                               ],
                             ),
@@ -237,88 +306,59 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                                   final confirmed = await showDialog<bool>(
                                     context: context,
                                     builder: (context) => AlertDialog(
-                                      title: const Text(
-                                        'Clear local history and review confirmations?',
+                                      title: Text(
+                                        tr(
+                                          'Clear local history and review confirmations?',
+                                        ),
                                       ),
-                                      content: const Text(
-                                        'This removes the saved checks and checklist timestamps from Dhalam on this device.',
+                                      content: Text(
+                                        tr(
+                                          'This removes the saved checks and checklist timestamps from Dhalam on this device.',
+                                        ),
                                       ),
                                       actions: [
                                         TextButton(
                                           onPressed: () =>
                                               Navigator.pop(context, false),
-                                          child: const Text('Cancel'),
+                                          child: Text(tr('Cancel')),
                                         ),
                                         TextButton(
                                           onPressed: () =>
                                               Navigator.pop(context, true),
-                                          child: const Text('Clear'),
+                                          child: Text(tr('Clear')),
                                         ),
                                       ],
                                     ),
                                   );
                                   if (confirmed == true) {
                                     await _action(j.clear);
-                                    if (mounted) setState(() => _report = null);
+                                    if (mounted) {
+                                      setState(() => _showReport = false);
+                                    }
                                   }
                                 },
-                          child: const Text('Clear local history and reviews'),
+                          child: Text(tr('Clear local history and reviews')),
                         ),
                       ]),
                       _list([
-                        const Text(
-                          'Manual review. Check a box only after you review the setting. Confirmations are yours, not automatic verification; revisit them after changes.',
-                        ),
-                        for (final entry in reviewSteps(widget.ios).entries)
-                          CheckboxListTile(
-                            value: j.reviewed.containsKey(entry.key),
-                            onChanged: _busy
-                                ? null
-                                : (value) => _action(
-                                    () => j.review(entry.key, value ?? false),
-                                  ),
-                            title: Text(entry.key),
-                            subtitle: Text(
-                              '${entry.value}\n${j.reviewed[entry.key] == null ? 'Not confirmed' : 'User-confirmed: ${stamp(j.reviewed[entry.key]!)}'}',
-                            ),
+                        Text(
+                          tr(
+                            'Inspect a pasted link locally. It will not be opened, fetched, stored in history or included in reports.',
                           ),
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _action(() async {
-                                  await toolsChannel.invokeMethod<void>(
-                                    'openPrivacySettings',
-                                  );
-                                }),
-                          child: Text(
-                            widget.ios
-                                ? 'Open Dhalam settings'
-                                : 'Open system privacy settings',
-                          ),
-                        ),
-                        const Text(
-                          'Follow the paths above for other settings. Menu names vary by device.',
-                        ),
-                      ]),
-                      _list([
-                        const Text(
-                          'Inspect a pasted link locally. It will not be opened, fetched, stored in history or included in reports.',
                         ),
                         TextField(
                           controller: _url,
-                          onChanged: (_) => setState(() => _inspection = null),
+                          onChanged: (_) => setState(() => _inspected = false),
                           maxLength: 4096,
                           autocorrect: false,
                           enableSuggestions: false,
-                          decoration: const InputDecoration(
-                            labelText: 'URL to inspect',
+                          decoration: InputDecoration(
+                            labelText: tr('URL to inspect'),
                           ),
                         ),
                         FilledButton(
-                          onPressed: () => setState(
-                            () => _inspection = inspectLink(_url.text),
-                          ),
-                          child: const Text('Inspect link'),
+                          onPressed: () => setState(() => _inspected = true),
+                          child: Text(tr('Inspect link')),
                         ),
                         OutlinedButton(
                           onPressed: () => Navigator.of(context).push(
@@ -330,73 +370,75 @@ class _SecurityToolsScreenState extends State<SecurityToolsScreen>
                               ),
                             ),
                           ),
-                          child: const Text('Review this link with Google AI'),
+                          child: Text(tr('Review this link with Google AI')),
                         ),
-                        if (_inspection != null) ...[
-                          const SizedBox(height: 12),
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Actual hostname'),
-                                  SelectableText(
-                                    _inspection!.host.isEmpty
-                                        ? 'Unavailable — invalid input'
-                                        : _inspection!.host,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleLarge,
-                                    textDirection: TextDirection.ltr,
-                                  ),
-                                  if (_inspection!.host.isNotEmpty) ...[
-                                    const Divider(),
-                                    Text(
-                                      'Scheme: ${_inspection!.scheme} · transport only, not trust',
-                                    ),
-                                    SelectableText(
-                                      'Path: ${_inspection!.path}',
-                                      textDirection: TextDirection.ltr,
-                                    ),
-                                  ],
-                                  const Text(
-                                    'Inspected locally; link not opened.',
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          for (final note in _inspection!.notes)
-                            ListTile(
-                              leading: const Icon(Icons.info_outline),
-                              title: Text(note),
-                            ),
-                        ],
+                        if (_inspected) _inspection(context),
                       ]),
                       _list([
-                        const Text(
-                          'Preview before sharing. Reports include device configuration, check times and your manual review confirmations. Choose the recipient in the share sheet.',
+                        Text(
+                          tr(
+                            'Manual review. Check a box only after you review the setting. Confirmations are yours, not automatic verification; revisit them after changes.',
+                          ),
+                        ),
+                        for (final entry in reviewSteps(widget.ios).entries)
+                          CheckboxListTile(
+                            value: j.reviewed.containsKey(entry.key),
+                            onChanged: _busy
+                                ? null
+                                : (value) => _action(
+                                    () => j.review(entry.key, value ?? false),
+                                  ),
+                            title: Text(trText(entry.key)),
+                            subtitle: Text(
+                              '${trText(entry.value)}\n${j.reviewed[entry.key] == null ? tr('Not confirmed') : tr('User-confirmed: {time}', {'time': stamp(j.reviewed[entry.key]!)})}',
+                            ),
+                          ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _action(() async {
+                                  await toolsChannel.invokeMethod<void>(
+                                    'openPrivacySettings',
+                                  );
+                                }),
+                          child: Text(
+                            tr(
+                              widget.ios
+                                  ? 'Open Dhalam settings'
+                                  : 'Open system privacy settings',
+                            ),
+                          ),
+                        ),
+                        Text(
+                          tr(
+                            'Follow the paths above for other settings. Menu names vary by device.',
+                          ),
+                        ),
+                      ]),
+                      _list([
+                        Text(
+                          tr(
+                            'Preview before sharing. Reports include device configuration, check times and your manual review confirmations. Choose the recipient in the share sheet.',
+                          ),
                         ),
                         FilledButton(
-                          onPressed: () =>
-                              setState(() => _report = j.report(widget.ios)),
-                          child: const Text('Generate report preview'),
+                          onPressed: () => setState(() => _showReport = true),
+                          child: Text(tr('Generate report preview')),
                         ),
-                        if (_report != null) ...[
+                        if (report != null) ...[
                           const SizedBox(height: 16),
-                          SelectableText(_report!),
+                          SelectableText(report),
                           FilledButton.icon(
                             onPressed: _busy
                                 ? null
                                 : () => _action(() async {
                                     await toolsChannel.invokeMethod<void>(
                                       'shareReport',
-                                      _report!,
+                                      report,
                                     );
                                   }),
-                            icon: const Icon(Icons.share),
-                            label: const Text('Share this report'),
+                            icon: const Icon(Symbols.share),
+                            label: Text(tr('Share this report')),
                           ),
                         ],
                       ], key: const ValueKey('report-list')),
@@ -421,7 +463,7 @@ class CaptureWarning extends StatefulWidget {
 }
 
 class _CaptureWarningState extends State<CaptureWarning>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, LanguageListener {
   StreamSubscription<String>? _events;
   Timer? _timer;
   String _status = 'Unavailable';
@@ -487,16 +529,20 @@ class _CaptureWarningState extends State<CaptureWarning>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Coercion Shield · screen capture active',
+                    tr('Coercion Shield · screen capture active'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
-                    widget.accessibilityEnabled
-                        ? 'Accessibility access was also enabled at the last check. Both can be legitimate, but review unfamiliar access if someone is pressuring you.'
-                        : 'Dhalam is visible in a capture session. Pause before opening private messages or financial information.',
+                    tr(
+                      widget.accessibilityEnabled
+                          ? 'Accessibility access was also enabled at the last check. Both can be legitimate, but review unfamiliar access if someone is pressuring you.'
+                          : 'Dhalam is visible in a capture session. Pause before opening private messages or financial information.',
+                    ),
                   ),
-                  const Text(
-                    'Stop sharing using the system controls or the sharing app. Never reveal OTPs or PINs. Dhalam cannot disconnect another app’s session.',
+                  Text(
+                    tr(
+                      'Stop sharing using the system controls or the sharing app. Never reveal OTPs or PINs. Dhalam cannot disconnect another app’s session.',
+                    ),
                   ),
                 ],
               ),

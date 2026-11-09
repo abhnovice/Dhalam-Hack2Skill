@@ -1,5 +1,10 @@
 # Dhalam — Hackathon Evaluation and Recommendations
 
+> Historical assessment from 7 November 2026. Its implementation findings,
+> test counts, and “today” references do not describe the current app. See
+> [the repository README](../README.md) and [the app runbook](../view_app.md)
+> for the 9 November demo state.
+
 Evaluation date: November 7, 2026.
 
 **Dhalam is not currently a competitive submission for this hackathon. My win-readiness assessment is 28/100: Weak.**
