@@ -52,10 +52,16 @@ internal fun BluetoothReviewPanel(
     val model = remember(activity) { ViewModelProvider(activity)[BluetoothReviewViewModel::class.java] }
     val state = model.state
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val systemUi = remember { mutableStateOf(false) }
     DisposableEffect(model, lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) model.stopTransfers() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && !activity.isChangingConfigurations && !systemUi.value && model.state.busy) model.stopTransfers()
+        }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); model.stopTransfers() }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            if (!activity.isChangingConfigurations) model.stopTransfers()
+        }
     }
     var permissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var rationale by remember { mutableStateOf(false) }
@@ -68,6 +74,7 @@ internal fun BluetoothReviewPanel(
     val latestInventory by rememberUpdatedState(state.inventory)
     val scope = rememberCoroutineScope()
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        systemUi.value = false
         val action = permissionAction
         permissionAction = null
         if (granted) { denied = false; action?.invoke() } else denied = true
@@ -82,15 +89,43 @@ internal fun BluetoothReviewPanel(
                 prefs.getBoolean("requested_connect", false) -> denied = true
                 else -> {
                     prefs.edit().putBoolean("requested_connect", true).apply()
+                    systemUi.value = true
                     request.launch(Manifest.permission.BLUETOOTH_CONNECT)
                 }
             }
         }
     }
+    val settings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        systemUi.value = false
+        if (model.permitted()) {
+            model.refreshPeers()
+            model.pairingMessage("Back in Dhalam. Show a fresh code on the sharing device.")
+        }
+    }
+    fun openBluetoothSettings() {
+        model.stopTransfers()
+        systemUi.value = true
+        val intents = listOf(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), Intent(Settings.ACTION_SETTINGS))
+        val opened = intents.any { intent -> runCatching { settings.launch(intent); true }.getOrDefault(false) }
+        if (!opened) {
+            systemUi.value = false
+            model.pairingMessage("Bluetooth settings are unavailable on this device.")
+        } else model.pairingMessage("Pair your devices, then press Back to return to Dhalam.")
+    }
+    val pairDevice = rememberDevicePairing(
+        onReady = {
+            model.refreshPeers()
+            if (companionOnly) model.startSharing()
+            else model.pairingMessage("Paired. Select the device and enter its Dhalam code.")
+        },
+        onMessage = model::pairingMessage,
+        onSettingsFallback = { openBluetoothSettings() },
+        systemUi = systemUi
+    )
     if (rationale) AlertDialog(onDismissRequest = { rationale = false; permissionAction = null },
         title = { Text(trText("Nearby devices")) },
         text = { Text(trText("Connect to a paired device for one read-only review.")) },
-        confirmButton = { TextButton(onClick = { rationale = false; request.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text(trText("Continue")) } },
+        confirmButton = { TextButton(onClick = { rationale = false; systemUi.value = true; request.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text(trText("Continue")) } },
         dismissButton = { TextButton(onClick = { rationale = false; permissionAction = null }) { Text(trText("Cancel")) } })
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text(trText("Pair a companion")) },
         text = { Text(trText("Install Dhalam on both devices. Pair them in Android Bluetooth settings. On the TV, open Dhalam device review and show a code. Enter it on this phone, then approve on the TV. Bluetooth Classic is required; some TVs do not support this connection. Headsets and controllers cannot share app inventories.")) },
@@ -120,9 +155,13 @@ internal fun BluetoothReviewPanel(
             Text(trText("Pair in Android Settings. Dhalam is required on both devices."), style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { help = true }) { Text(trText("Setup")) }
-                TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-                }) { Text(trText("Bluetooth settings")) }
+                TextButton(onClick = { perform {
+                    model.stopTransfers()
+                    pairDevice()
+                } }, enabled = !state.busy) { Text(trText("Pair a device")) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { openBluetoothSettings() }) { Text(trText("Bluetooth settings")) }
             }
             if (denied) {
                 Text(trText("Nearby devices permission is needed."), color = MaterialTheme.colorScheme.error)
@@ -130,6 +169,7 @@ internal fun BluetoothReviewPanel(
                     Uri.fromParts("package", context.packageName, null))) }) { Text(trText("App settings")) }
             }
             if (companionOnly) {
+                Text(trText("Pair a device, then show a code. Settings: press Back to return."), style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { perform { model.startSharing() } }, enabled = !state.busy,
                     modifier = Modifier.heightIn(min = 56.dp)) { Text(trText("Show pairing code")) }
                 state.sharingCode?.let {
@@ -165,7 +205,7 @@ internal fun BluetoothReviewPanel(
             }
             state.message?.let { Text(trText(it), style = MaterialTheme.typography.bodyMedium) }
             state.error?.let { Text(trText(it), color = MaterialTheme.colorScheme.error) }
-            if (state.busy) TextButton(onClick = model::stopTransfers) { Text(trText("Cancel")) }
+            if (state.busy) TextButton(onClick = { model.stopTransfers(clearCode = true) }) { Text(trText("Cancel")) }
             state.inventory?.let { inventory ->
                 RemoteInventoryView(inventory)
                 if (reportBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -189,6 +229,7 @@ internal fun RemoteInventoryView(inventory: RemoteDeviceInventory) {
                 Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                    if (app.totalRequestedPermissions > app.permissions.size) Text("Showing ${app.permissions.size} of ${app.totalRequestedPermissions} permissions.")
                     if (app.permissions.isEmpty()) Text(trText("No requested permissions reported."))
                     app.permissions.forEach {
                         Text(it.name.substringAfterLast('.').replace('_', ' '), style = MaterialTheme.typography.labelLarge)
@@ -207,7 +248,7 @@ internal fun RemoteInventoryView(inventory: RemoteDeviceInventory) {
                 Column(Modifier.padding(12.dp)) {
                     Text(app.label, style = MaterialTheme.typography.titleMedium)
                     Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                    Text("${app.permissions.count { it.status == "granted" }} granted · ${app.permissions.size} requested",
+                    Text("${app.permissions.count { it.status == "granted" }} granted · ${app.permissions.size}/${app.totalRequestedPermissions} permissions shown",
                         style = MaterialTheme.typography.bodySmall)
                 }
             }

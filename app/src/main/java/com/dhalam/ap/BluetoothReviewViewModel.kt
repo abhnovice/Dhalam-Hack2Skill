@@ -68,13 +68,16 @@ class BluetoothReviewViewModel(application: Application) : AndroidViewModel(appl
     fun code(value: String) { state = state.copy(enteredCode = value.filter(Char::isDigit).take(6)) }
     fun approve(allowed: Boolean) { approval?.complete(allowed) }
 
-    @Synchronized fun stopTransfers() {
+    fun pairingMessage(message: String) { state = state.copy(message = message, error = null) }
+
+    @Synchronized fun stopTransfers(clearCode: Boolean = false) {
         epoch++
         runCatching { socket?.close() }; socket = null
         runCatching { server?.close() }; server = null
         approval?.complete(false); approval = null
         task?.cancel(); task = null
-        state = state.copy(busy = false, sharingCode = null, enteredCode = "", approvalPeer = null)
+        state = state.copy(busy = false, sharingCode = null,
+            enteredCode = if (clearCode) "" else state.enteredCode, approvalPeer = null)
     }
 
     private suspend fun <T> exchange(channel: BluetoothSocket, milliseconds: Long = 15_000, block: () -> T): T = coroutineScope {
@@ -170,11 +173,18 @@ class BluetoothReviewViewModel(application: Application) : AndroidViewModel(appl
                 val response = JSONObject().put("version", 1).put("ok", true).put("inventory", inventory.json())
                 exchange(channel) { DeviceReviewProtocol.write(channel.outputStream, response.toString().toByteArray()) }
                 if (epoch == token) state = state.copy(message = "Shared once. Connection closed.")
+            } catch (_: TimeoutCancellationException) {
+                if (epoch == token) state = state.copy(error = "Approval timed out. Show a new code and approve on the TV.", message = null)
             } catch (cancel: CancellationException) {
                 if (epoch == token) state = state.copy(message = "Session ended. Generate a new code.")
                 throw cancel
-            } catch (_: Exception) {
-                if (epoch == token) state = state.copy(error = "Session expired or connection failed. Generate a new code.", message = null)
+            } catch (error: Exception) {
+                android.util.Log.w("DhalamBluetooth", "Sharing failed: ${error.javaClass.simpleName}")
+                if (epoch == token) state = state.copy(error = when (error) {
+                    is SecurityException -> "Nearby devices permission was revoked. Allow it and show a new code."
+                    is IllegalArgumentException -> "Invalid code or report size. Show a new code and retry."
+                    else -> "Bluetooth connection failed. Keep both apps open and show a new code."
+                }, message = null)
             } finally {
                 runCatching { connection?.close() }; runCatching { listener?.close() }
                 if (epoch == token) {

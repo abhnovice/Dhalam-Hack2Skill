@@ -8,7 +8,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class RemotePermission(val name: String, val status: String)
-data class RemoteApp(val packageName: String, val label: String, val permissions: List<RemotePermission>)
+data class RemoteApp(val packageName: String, val label: String, val permissions: List<RemotePermission>,
+    val totalRequestedPermissions: Int = permissions.size)
 data class RemoteDeviceInventory(
     val deviceName: String,
     val androidVersion: String,
@@ -20,6 +21,7 @@ data class RemoteDeviceInventory(
         .put("observedAt", observedAt).put("totalVisibleApps", totalVisibleApps)
         .put("apps", JSONArray(apps.map { app ->
             JSONObject().put("packageName", app.packageName).put("label", app.label)
+                .put("totalRequestedPermissions", app.totalRequestedPermissions)
                 .put("permissions", JSONArray(app.permissions.map {
                     JSONObject().put("name", it.name).put("status", it.status)
                 }))
@@ -44,6 +46,8 @@ data class RemoteDeviceInventory(
                         val status = text(permission, "status", 16)
                         require(status in setOf("granted", "not_granted", "unknown")) { "Invalid permission status." }
                         RemotePermission(text(permission, "name", 256), status)
+                    }, app.optInt("totalRequestedPermissions", permissions.length()).also {
+                        require(it in permissions.length()..10000) { "Invalid permission coverage." }
                     })
             }
             val total = json.getInt("totalVisibleApps")
@@ -65,16 +69,25 @@ internal fun collectRemoteDeviceInventory(context: Context): RemoteDeviceInvento
     val apps = packages.take(256).map { pkg ->
         val flags = pkg.requestedPermissionsFlags
         val permissions = pkg.requestedPermissions.orEmpty()
-        require(permissions.size <= 256) { "An app has too many permissions to share." }
         RemoteApp(pkg.packageName.take(256),
             (pkg.applicationInfo?.loadLabel(pm)?.toString() ?: pkg.packageName).take(160).ifBlank { pkg.packageName },
-            permissions.mapIndexed { index, permission ->
+            permissions.take(256).mapIndexed { index, permission ->
                 val status = flags?.getOrNull(index)?.let {
                     if (it and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0) "granted" else "not_granted"
                 } ?: "unknown"
                 RemotePermission(permission.take(256), status)
-            })
+            }, permissions.size)
     }
-    return RemoteDeviceInventory(Build.MODEL.take(80).ifBlank { "Android device" },
-        Build.VERSION.RELEASE.take(40).ifBlank { "Unknown" }, System.currentTimeMillis(), packages.size, apps)
+    return boundedRemoteInventory(RemoteDeviceInventory(Build.MODEL.take(80).ifBlank { "Android device" },
+        Build.VERSION.RELEASE.take(40).ifBlank { "Unknown" }, System.currentTimeMillis(), packages.size, apps))
+}
+
+/** Reserve envelope bytes; preserve totals so omitted apps are never presented as absent. */
+internal fun boundedRemoteInventory(inventory: RemoteDeviceInventory, maxBytes: Int = DeviceReviewProtocol.MAX_BYTES - 1024): RemoteDeviceInventory {
+    var result = inventory
+    while (result.json().toString().toByteArray(Charsets.UTF_8).size > maxBytes) {
+        require(result.apps.isNotEmpty()) { "Device metadata exceeds the transfer limit." }
+        result = result.copy(apps = result.apps.dropLast(1))
+    }
+    return result
 }
