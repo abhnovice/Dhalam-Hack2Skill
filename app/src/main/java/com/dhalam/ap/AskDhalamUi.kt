@@ -42,7 +42,7 @@ fun AskDhalamInput(
                 modifier = Modifier.heightIn(min = 48.dp)) { Text(trText("Send")) }
         }
         ChatLinkPreview(state.question)
-        Text(trText("For scam-pattern analysis of messages, URLs and screenshots, use the Scam check tab."),
+        Text(trText("Suspicious message? Use Scam check."),
             style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.signedIn) {
@@ -60,7 +60,7 @@ fun AskDhalamInput(
                 }
             }
         }
-        Text(trText("Camera app questions use your local scan. Other questions share your question and selected scan facts with your backend and Google Gemini."),
+        Text(trText("Sends your question and scan facts to Google Gemini."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 4.dp))
     }

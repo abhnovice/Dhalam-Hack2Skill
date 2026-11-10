@@ -9,6 +9,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -23,24 +26,51 @@ val sensitivePermissions = linkedMapOf(
 @Composable
 fun SensitivePermissionChart(inventory: PermissionInventory, onSelect: (String) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(trText("Sensitive permissions"), style = MaterialTheme.typography.titleMedium)
-            Text(trText("${inventory.packageCount} visible apps · tap to explore"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            sensitivePermissions.forEach { (label, permission) ->
-                val report = inventory.permissions.firstOrNull { it.name == permission }
-                val count = report?.apps?.filter { it.granted == true }?.map { it.packageName }?.distinct()?.size
-                TextButton(onClick = { onSelect(permission) }, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 2.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(trText(label), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                        if (count != null) {
-                            LinearProgressIndicator(progress = { (count.toFloat() / inventory.packageCount.coerceAtLeast(1)).coerceIn(0f, 1f) },
-                                modifier = Modifier.weight(1f).height(4.dp), gapSize = 0.dp, drawStopIndicator = {})
-                            Text(trText(count.toString()), modifier = Modifier.width(28.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.titleSmall)
-                        } else Text(trText("Not observed"), style = MaterialTheme.typography.bodySmall)
+            Text(trText("${inventory.packageCount} visible apps · tap to explore"),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            sensitivePermissions.entries.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { (label, permission) ->
+                        val report = inventory.permissions.firstOrNull { it.name == permission }
+                        val count = report?.apps?.filter { it.granted == true }?.map { it.packageName }?.distinct()?.size
+                        SensitivePermissionItem(label, permission, count,
+                            Modifier.weight(1f)) { onSelect(permission) }
                     }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
-            Text(trText("Granted access does not mean actual use."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(trText("Granted access does not mean actual use."), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SensitivePermissionItem(label: String, permission: String, count: Int?,
+    modifier: Modifier, onClick: () -> Unit) {
+    val icon = when (label) {
+        "Camera" -> R.drawable.ms_camera
+        "Microphone" -> R.drawable.ms_mic
+        "Location" -> R.drawable.ms_location
+        "Contacts" -> R.drawable.ms_contacts
+        else -> R.drawable.ms_messages
+    }
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
+        modifier = modifier.testTag("sensitive:$permission")) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                Icon(painterResource(icon), contentDescription = null,
+                    modifier = Modifier.padding(8.dp).size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(trText(label), style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Text(trText(count?.let { if (it == 1) "1 app" else "$it apps" } ?: "Not observed"),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

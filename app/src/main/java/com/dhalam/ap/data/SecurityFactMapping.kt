@@ -37,6 +37,11 @@ fun SecurityObservation.factBatches(): List<SecurityFactBatch> = buildList {
                 }))
             }
         }
+    if (accessibilitySettings.isNotEmpty()) {
+        add(SecurityFactBatch("accessibility_setting", accessibilitySettings.map { setting ->
+            fact("accessibility_setting", setting.id, "", setting.label + "; " + setting.explanation, setting.status)
+        }))
+    }
     add(SecurityFactBatch("device", deviceSignals.map { signal ->
         fact("device", signal.label, "", signal.label, signal.status)
     }))

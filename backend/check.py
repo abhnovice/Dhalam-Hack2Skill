@@ -51,6 +51,8 @@ def deploy(mobile_auth=False):
         'GOOGLE_CLOUD_LOCATION': os.getenv('GOOGLE_CLOUD_LOCATION', 'global'),
         'GOOGLE_GENAI_USE_VERTEXAI': 'true',
         'GEMINI_MODEL': os.environ['GEMINI_MODEL'],
+        'GEMINI_ASK_MODEL': os.getenv('GEMINI_ASK_MODEL', '').strip(),
+        'GEMINI_ACCESSIBILITY_MODEL': os.getenv('GEMINI_ACCESSIBILITY_MODEL', '').strip(),
         'AI_PROVIDER': 'gemini',
         'REQUIRE_GOOGLE_SIGNIN': 'true' if mobile_auth else 'false',
         'TRUST_CLOUD_RUN_IAM': 'false' if mobile_auth else 'true',

@@ -105,7 +105,7 @@ fun AuthenticatedContent(
                             modifier = Modifier.padding(top = 16.dp)
                         )
                         Text(
-                            trText("Sign in to review your device’s permissions and security."),
+                            trText("Review your device’s access."),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,

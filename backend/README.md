@@ -31,6 +31,29 @@ Cloud Run's region is separately set to `asia-south1`.
 The `.env.example` documents the settings without credentials. Keep `.env`
 private. Never paste API keys into a mobile connection screen.
 
+## AI modules
+
+Scam Check, Accessibility reports and Ask Dhalam use the same server-side
+Gemini client. API-key mode requires GOOGLE_GENAI_USE_VERTEXAI=false and
+GEMINI_API_KEY (a Secret Manager reference on Cloud Run). Vertex mode uses
+the attached service identity instead. Never put AI keys in Android Gradle.
+
+GEMINI_MODEL is the default model for all modules. Optional
+GEMINI_ACCESSIBILITY_MODEL and GEMINI_ASK_MODEL override it for their respective
+routes; omit them or leave them blank to use the same working model. Model IDs
+must be available through the selected authentication/provider route.
+
+Accessibility uses a dedicated assistive-settings reviewer role, temperature 0.1,
+a 2048-token generation allowance, and a validated 50–100 word JSON report.
+It submits only consented settings and enabled-service observations.
+Ask Dhalam uses an apps-and-permissions assistant role, temperature 0.1,
+a 4096-token allowance, and structured answers with validated scan evidence IDs.
+Neither module treats unknown access as off or claims grants prove actual use.
+
+Deploy updated backend source to Cloud Run to apply these prompts and settings.
+Adding variables locally does not update the hosted service; no additional AI
+key is required per module.
+
 ## Endpoints
 
 | Route | Behavior |
@@ -40,6 +63,7 @@ private. Never paste API keys into a mobile connection screen.
 | `POST /api/v1/analyze-threat` | Explicit consent plus message, URL and/or JPEG/PNG/WebP; validated structured Gemini assessment |
 | `POST /api/v1/coercion-check` | Compatibility helper; mobile evaluates capture warnings locally without uploading telemetry |
 | `GET /check` | Native Android compatibility configuration check |
+| `POST /accessibility-report` | Consent-based Gemini explanation of current accessibility observations; 50–100 English words; app inventory is not accepted |
 | `POST /ask` | Native Android evidence-grounded questions with validated evidence citations; defaults to Gemini |
 | `GET/POST /webhooks/whatsapp` | Optional direct Meta test-number webhook with signature verification and sender allowlist |
 
