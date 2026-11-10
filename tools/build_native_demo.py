@@ -30,8 +30,20 @@ def web_client_id() -> str:
     raise SystemExit("Set GOOGLE_WEB_CLIENT_ID in ignored backend/.env before building")
 
 
+def backend_url() -> str:
+    for line in (ROOT / "backend/.env").read_text().splitlines():
+        if not line.startswith("DHALAM_API_URL="):
+            continue
+        value = line.split("=", 1)[1].strip().strip('"').strip("'").rstrip("/")
+        if not re.fullmatch(r"https://[A-Za-z0-9.-]+\.run\.app", value):
+            raise SystemExit("DHALAM_API_URL in backend/.env must be a Cloud Run HTTPS origin")
+        return value
+    raise SystemExit("Set DHALAM_API_URL in ignored backend/.env before building")
+
+
 def main() -> None:
     client_id = web_client_id()
+    url = backend_url()
     env = os.environ.copy()
     env["DHALAM_GOOGLE_WEB_CLIENT_ID"] = client_id
     if not env.get("JAVA_HOME"):
@@ -47,10 +59,14 @@ def main() -> None:
     config = BUILD_CONFIG.read_text()
     if f'GOOGLE_WEB_CLIENT_ID = "{client_id}";' not in config:
         raise SystemExit("BuildConfig does not contain the unquoted Web OAuth client ID")
+    if f'ASK_BACKEND_URL = "{url}";' not in config:
+        raise SystemExit("BuildConfig does not point to the configured Dhalam Cloud Run service")
     with ZipFile(SOURCE_APK) as apk:
         dex = b"".join(apk.read(name) for name in apk.namelist() if name.endswith(".dex"))
     if client_id.encode() not in dex or ("'" + client_id + "'").encode() in dex:
         raise SystemExit("Built APK does not contain the unquoted Web OAuth client ID")
+    if url.encode() not in dex:
+        raise SystemExit("Built APK does not contain the configured Dhalam Cloud Run URL")
     DEMO_APK.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(SOURCE_APK, DEMO_APK)
     digest = hashlib.sha256(DEMO_APK.read_bytes()).hexdigest()

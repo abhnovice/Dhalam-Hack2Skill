@@ -302,6 +302,10 @@ def main():
         with httpx.Client(timeout=20, follow_redirects=False, headers=headers) as client:
             health = client.get(base + '/health')
             info = client.get(base + '/')
+        if health.status_code == 200 and info.status_code == 401:
+            print('PASS: backend health; configuration endpoint requires Google sign-in.')
+            print('Liveness does not prove model inference. Use --live for a synthetic model test.')
+            return 0
         if health.status_code != 200 or info.status_code != 200:
             print('FAIL: backend health or configuration endpoint rejected the request.')
             return 1

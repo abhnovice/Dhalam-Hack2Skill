@@ -28,6 +28,10 @@ Only the current native Android demo APK is kept in [`build/apks/`](build/apks).
 It includes the registered Web OAuth client and requires an allowed Google
 account for hosted AI. Build Flutter Android or iOS from source when needed;
 Flutter needs a Google sign-in flow before it can call hosted AI.
+The native APK and hosted backend use the Dhalam AI Google Cloud project
+`project-075ab0b6-c39b-4175-9b1`. `gradle.properties` points to that project's
+Cloud Run service; the APK build script reads its OAuth client from ignored
+`backend/.env`. The `dhalamclient` project is not used by this APK.
 
 | Platform | Build Artifact | Purpose |
 | --- | --- | --- |
@@ -87,9 +91,8 @@ Native Android alternative: open the repository root in Android Studio, or use
 `./gradlew :app:assembleDebug` with the project's required full JDK. It is not
 necessary to build the native alternative to run Flutter.
 For a shareable native APK, run `python3 tools/build_native_demo.py`. It reads
-the Web OAuth client ID from ignored `backend/.env`, validates the packaged
-value, and updates `build/apks/dhalam-native-android.apk`. No Gradle file edit
-is needed.
+the Web OAuth client ID and Cloud Run URL from ignored `backend/.env`, validates
+both packaged values, and updates `build/apks/dhalam-native-android.apk`.
 
 ## Verification and deployment
 
