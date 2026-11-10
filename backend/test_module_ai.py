@@ -54,7 +54,7 @@ def test_module_models_roles_and_schemas_share_client(monkeypatch, override):
     assert "accessibility reviewer" in access["config"].system_instruction
     assert "Ask Dhalam" in ask["config"].system_instruction
     assert access["config"].max_output_tokens == 2048
-    assert ask["config"].max_output_tokens == 4096
+    assert ask["config"].max_output_tokens == 2048
     assert access["config"].temperature == ask["config"].temperature == 0.1
     assert "consent" not in json.loads(access["contents"])
     assert json.loads(ask["contents"])["evidence"][0]["status"] == "unknown"

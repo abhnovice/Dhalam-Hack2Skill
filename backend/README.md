@@ -47,7 +47,7 @@ Accessibility uses a dedicated assistive-settings reviewer role, temperature 0.1
 a 2048-token generation allowance, and a validated 50–100 word JSON report.
 It submits only consented settings and enabled-service observations.
 Ask Dhalam uses an apps-and-permissions assistant role, temperature 0.1,
-a 4096-token allowance, and structured answers with validated scan evidence IDs.
+a 2048-token allowance with a 50-second deadline, and structured answers with validated scan evidence IDs.
 Neither module treats unknown access as off or claims grants prove actual use.
 
 Deploy updated backend source to Cloud Run to apply these prompts and settings.
