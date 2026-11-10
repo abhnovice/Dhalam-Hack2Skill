@@ -60,7 +60,7 @@ fun AskDhalamInput(
                 }
             }
         }
-        Text(trText("Sends your question and scan facts to Google Gemini."),
+        Text(trText("Camera questions use your local scan. Other questions send selected facts to Gemini."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 4.dp))
     }

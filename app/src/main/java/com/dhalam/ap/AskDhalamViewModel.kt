@@ -194,7 +194,8 @@ class AskDhalamViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val facts = withContext(Dispatchers.IO) { SecurityStore.repository(getApplication()).all() }
                 localAskAnswer(question, facts, requireNotNull(snapshot))?.let {
-                    state = state.copy(loading = false, result = it)
+                    state = state.copy(loading = false, result = it, question = "",
+                        conversation = (state.conversation + AskChatTurn(question, it)).takeLast(8))
                     return@launch
                 }
                 val result = withGoogleSession(refreshIdentity) { AskBackend().ask(it, question, facts, requireNotNull(snapshot)) }
