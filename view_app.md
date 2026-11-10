@@ -65,6 +65,12 @@ Flutter from source and use a local backend for Flutter AI checks:
 adb install -r build/apks/dhalam-native-android.apk
 ```
 
+If the emulator's Google account chooser fails with a network error even
+though the host computer is online, restart that emulator with an explicit
+DNS resolver: `emulator -avd Medium_Phone_API_36.0 -dns-server 8.8.8.8,1.1.1.1`.
+This keeps the emulator's data. Confirm DNS with
+`adb shell ping -c 1 accounts.google.com` before retrying sign-in.
+
 `-r` replaces the installed native app and keeps its data. The repository APK
 and the native debug build use the same signing key. If Android refuses with a
 signature error, uninstall `com.dhalam.ap` and install again; uninstalling

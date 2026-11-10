@@ -252,7 +252,7 @@ class MainActivity : FragmentActivity() {
                     askViewModel.completeGoogleSignIn(google.idToken, google.displayName ?: google.id)
                 } catch (_: GetCredentialCancellationException) {
                     askViewModel.signInFailed(if (BuildConfig.DEBUG)
-                        "Google sign-in did not complete. If you selected an account, check this build’s Android OAuth client and SHA-1."
+                        "Google sign-in did not complete. Check your connection and Google account, then try again."
                     else "Google sign-in did not complete. Please try again.")
                 } catch (_: NoCredentialException) {
                     askViewModel.signInFailed("No Google account is available. Add an account to this device and try again.")
